@@ -1,0 +1,155 @@
+# Core package and development configuration.
+
+# Build system dependencies ----------
+
+[build-system]
+requires = [
+  "poetry-core>=1.5.1",
+ # For building binary modules, include the following requirements:
+ # "setuptools>=67.5.1",
+ # "cmake-build-extension>=0.5.1",
+]
+build-backend = "poetry.core.masonry.api"
+
+# Project package metadata ----------
+
+[tool.poetry]
+name = "atm"
+packages = [
+  { include = "atm" }
+]
+exclude = [
+  "*/tests/"
+]
+version = "0.0.1"
+description = "Alchemical transfer method"
+authors = ["Eric Engineering"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+]
+readme = "README.md"
+homepage = "https://gitlab.com/eric.clyang521/atm"
+repository = "https://gitlab.com/eric.clyang521/atm"
+
+# For building binary modules, include the following:
+# [tool.poetry.build]
+# generate-setup-file = true
+# script = "build.py"
+[tool.poetry.scripts]
+atm = 'atm.cli:run_atm'
+
+# Dependencies ----------
+
+# The conda channels and platforms from which to resolve dependencies
+[tool.conda-lock]
+channels = [
+  "conda-forge",
+]
+platforms = [
+  "linux-64",
+]
+
+# Runtime dependencies that are only conda installable
+[tool.conda-lock.dependencies]
+ambertools = ">=22.0"
+openmm-atmmetaforce-plugin = "*"
+
+
+# Runtime dependencies that are both pip and conda installable
+[tool.poetry.dependencies]
+python = ">=3.9.0,<3.11"
+importlib_metadata = {version = ">=4", python = "~3.10"}
+
+pyyaml = "*"
+rdkit = "*"
+biopython = "*"
+openmm = ">=8.0"
+openff-toolkit = ">=0.13"
+openmmforcefields = ">=0.8"
+lomap2 = ">=2.3.0"
+configobj = "*"
+setproctitle = "*"
+r-base = "*"
+
+
+# Development dependencies that are at least pip installable.
+# If dependencies are only pip installable, set
+# them as {version = "<version number>", source = "pypi"}
+# Temporarily removed from the dependencies:
+#   google-cloud-storage = "2.1.0"
+[tool.poetry.dev-dependencies]
+black = "22.10.0"
+cloudsmith-cli = {version = "0.32.0", source = "pypi"}
+detail = {version = "0.2.2", source = "pypi"}
+flake8 = "6.0.0"
+flake8-bugbear = "22.12.6"
+flake8-comprehensions = "3.10.1"
+flake8-mutable = "1.2.0"
+footing = {version = "*", source = "pypi"}
+python-gitlab = ">=3.12"
+grayskull = "2.2.2"
+isort = "5.12.0"
+myst-parser = "0.18.1"
+packaging = ">=19.2"
+pip = "*"
+poetry = ">=1.4.0"
+pre-commit = ">=3.0.0"
+pytest = "7.2.0"
+pytest-cov = "4.0.0"
+pytest-mock = "3.10.0"
+pytest-xdist = "3.1.0"
+Sphinx = "5.3.0"
+sphinx-copybutton = ">=0.5.0"
+sphinx-rtd-theme = "1.1.1"
+typer = ">=0.7.0"
+
+# Dev tool configuration ---
+
+[tool.bandit]
+# exclude_dirs = ["tests", "path/to/file"]
+# tests = ["B201", "B301"]
+skips = ["B301", "B602"]
+
+# Black formatting parameters
+[tool.black]
+line-length = 88
+extend_exclude = '''
+/(
+  | _conda_envs
+)/
+'''
+
+# Coverage settings
+[tool.coverage.run]
+branch = true
+source = ["atm"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "pass",
+  "pytest.mark.skip"
+]
+show_missing = true
+fail_under = 100
+
+# Isort settings
+[tool.isort]
+profile = "black"
+line_length = 88
+lines_between_types = 1
+extend_skip = ["_conda_envs"]
+
+# Pytest options
+[tool.pytest.ini_options]
+markers = [
+    "systest: system tests are typically slow and resource hogging.",
+    "slow: slow tests"
+]
+testpaths = "atm/tests"
+xfail_strict = true

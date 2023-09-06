@@ -1,0 +1,7 @@
+_extensions:
+- jinja2_time.TimeExtension
+_template: git@gitlab.com:eric.clyang521/ericlab-lib-template.git
+_version: 6e8eaf3774744bfad48b41c5c0ec8a7532464076
+module_name: atm
+repo_name: atm
+short_description: Alchemical transfer method
