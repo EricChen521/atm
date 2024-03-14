@@ -3,9 +3,11 @@ import pickle
 import shutil
 import subprocess
 
+from multiprocessing import Process
 from pathlib import Path
 from string import Template
-from typing import Dict, Tuple
+from typing import Dict
+
 
 import numpy as np
 
@@ -27,79 +29,6 @@ from atm.utility import (
 )
 
 LOGGER = logging.getLogger(__name__)
-
-
-def calc_displacement_vec(
-    protein_fpath: Path,
-    forcefield_dpath: Path,
-) -> Tuple:
-    """Return the optimal translational vector (x,y,z)."""
-    trans_vec = np.asarray([0.0, 0.0, 0.0])
-    work_dir = Path("./_translation")
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    with tmp_cd(work_dir):
-        ligand_fpaths = [
-            e / "vacuum.mol2" for e in forcefield_dpath.iterdir() if e.is_dir()
-        ]
-        solute_fpaths = [protein_fpath] + ligand_fpaths
-        top_fpath, _crd_fpath = create_amber_system(
-            output_top_path="system.prmtop",
-            output_crd_path="system.inpcrd",
-            solute_paths=solute_fpaths,
-            buffer_size=10.0,
-            solvent_model="TIP3P",
-            box_shape="Box",
-        )
-        solvated_fpath = top_fpath.with_suffix(".pdb")
-        solvent_coords = []
-        lig_coords = []
-
-        for line in open(solvated_fpath, "r").readlines():
-            tokens = line.split()
-            if "LIG" in line:
-                lig_coords.append(
-                    [float(tokens[-5]), float(tokens[-4]), float(tokens[-3])]
-                )
-            elif "WAT" in line:
-                solvent_coords.append(
-                    [float(tokens[-5]), float(tokens[-4]), float(tokens[-3])]
-                )
-
-        solvent_coords = np.array(solvent_coords)
-        solvent_Xs = solvent_coords[:, 0]
-        solvent_Ys = solvent_coords[:, 1]
-        solvent_Zs = solvent_coords[:, 2]
-        # axis_index, axis_min, axis_max
-        x_range = np.array([0, min(solvent_Xs), max(solvent_Xs)])
-        y_range = np.array([1, min(solvent_Ys), max(solvent_Ys)])
-        z_range = np.array([2, min(solvent_Zs), max(solvent_Zs)])
-        # print(f"system size: X {x_range}, Y {y_range}, Z {z_range}")
-
-        small_area_center = np.array([0.0, 0.0, 0.0])
-
-        axes = sorted([x_range, y_range, z_range], key=lambda v: v[2] - v[1])
-        # print(axes)
-        small_area_center[int(axes[0][0])] = np.mean(axes[0][1:])
-        small_area_center[int(axes[1][0])] = np.mean(axes[1][1:])
-        small_area_center[int(axes[2][0])] = axes[2][2]
-        # print(f"small_area_center: {small_area_center}")
-        lig_coords = np.array(lig_coords)
-
-        # sort ligand coords by longest axis: axes[2][0]
-        distant_lig_atom_coords = lig_coords[lig_coords[:, int(axes[2][0])].argsort()][
-            -1, :
-        ]
-        trans_vec = np.round((small_area_center - distant_lig_atom_coords), 2)
-        # print(f"Distant ligand atom coords: {distant_lig_atom_coords}")
-        # print(f"Displacement vector: {trans_vec}")
-
-    shutil.rmtree(work_dir)
-
-    with open("displacement_vec.pickle", "wb") as fh:
-        pickle.dump(trans_vec, fh, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return trans_vec
 
 
 def calc_displ_vec(
@@ -185,6 +114,9 @@ def setup_atm_dir(  # noqa: C901
     with tmp_cd(config.work_dir):
         Path("free_energy").mkdir(parents=True, exist_ok=True)
         with tmp_cd("free_energy"):
+            # use multiprocess as openff is slow
+            procs = []
+            parameters = []
             if config.atm_type == "rbfe":
                 # check whether Morph.in is provided
                 if not config.morph_fpathname:
@@ -255,6 +187,7 @@ def setup_atm_dir(  # noqa: C901
                                 translate=(2, translation_vec),
                                 solute_paths=solute_paths,
                             )
+                            _correct_parm_elem(parm_fpathname="complex.prmtop")
                             create_xml_from_amber(
                                 amber_top_fpath=Path("complex.prmtop"),
                                 amber_crd_fapth=Path("complex.inpcrd"),
@@ -263,22 +196,17 @@ def setup_atm_dir(  # noqa: C901
                             )
 
                         elif config.forcefield_option == "openff":
-
-                            create_xml_from_openff(
-                                protein_fpath=protein_fpath,
-                                lig1_fpath=ligand_dpath
-                                / left_ligand_name
-                                / "ligand.sdf",
-                                lig2_fpath=ligand_dpath
-                                / right_ligand_name
-                                / "ligand.sdf",
-                                translation_vec=translation_vec,
-                                xml_out_fpath="./complex.xml",
-                                pdb_out_fpath="./complex.pdb",
-                                cofactor_fpath=cofactor_fpath
-                                if cofactor_fpath
-                                else None,
-                                is_hmass=True if config.dt == 0.004 else False,
+                            Path("complex.pdb").is_file() or parameters.append(
+                                [
+                                    protein_fpath,
+                                    ligand_dpath / left_ligand_name / "ligand.sdf",
+                                    translation_vec,
+                                    Path("./complex_sys.xml").resolve(),
+                                    Path("./complex.pdb").resolve(),
+                                    ligand_dpath / right_ligand_name / "ligand.sdf",
+                                    cofactor_fpath if cofactor_fpath else None,
+                                    True if config.dt == 0.04 else False,
+                                ]
                             )
 
             elif config.atm_type == "abfe":
@@ -330,6 +258,27 @@ def setup_atm_dir(  # noqa: C901
                                 else None,
                                 is_hmass=True if config.dt == 0.004 else False,
                             )
+            if parameters:
+                for params in parameters:
+                    # logging.info(params)
+                    logging.info("running openff for pair")
+                    proc = Process(
+                        target=create_xml_from_openff,
+                        args=(
+                            params[0],
+                            params[1],
+                            params[2],
+                            params[3],
+                            params[4],
+                            params[5],
+                            params[6],
+                        ),
+                    )
+                    procs.append(proc)
+                    proc.start()
+                for proc in procs:
+                    proc.join()
+
 
 
 def _get_solute_coords(solute_fpath: Path):  # pdb or sdf file format
@@ -350,7 +299,26 @@ def _get_solute_coords(solute_fpath: Path):  # pdb or sdf file format
 
     return coords
 
+def _correct_parm_elem(parm_fpathname: str):
+    """
+    Correct the atomic number by parmedizer
+    """
 
+    import parmed
+
+    from parmed.periodic_table import AtomicNum
+
+    shutil.copyfile(parm_fpathname, parm_fpathname + ".ori")
+    mol = parmed.load_file(parm_fpathname)
+    for a in mol.atoms:
+
+        element_name = parmed.periodic_table.element_by_mass(a.mass)
+        if a.atomic_number != AtomicNum[element_name]:
+            a.atomic_number = AtomicNum[element_name]
+            a.element = AtomicNum[element_name]
+
+    mol.save(parm_fpathname, overwrite=True)
+    
 def _ligset_coords(ligands_dir: Path) -> Dict:
     """
     Return {ligand_name(str): coords (np.array)} for all ligands under `ligands_dir`.
@@ -389,6 +357,7 @@ def parse_protein(
             solute_paths=[protein_fpath],
         )
         protein_intact_fpathname = str(tmp_dir / "protein_intact.pdb")
+
 
         CA_ids = []
         vsite_CA_ids = []
@@ -479,6 +448,17 @@ def update_scripts(
     N_protein = protein_info["N_atoms"]
     CA_ids = protein_info["CA_ids"]
     vsite_CA_ids = protein_info["vsite_CA_ids"]
+
+    # sanity check to ensure the CA_ids match complex.pdb CA atoms
+
+    complex_stuct = open(next(free_energy_dpath.iterdir())/"complex.pdb","r").readlines()
+    for line in complex_stuct:
+        if "HETAM" in line or "ATOM" in line:
+            if line.split()[2] == "CA":
+                CA_id = int(line.split()[1]) - 1 
+                assert CA_id in CA_ids, f"CA_id: {CA_id} not found in atom.cntl file, double check input sturcture file!"
+        
+    LOGGER.info("CA ids check passed")
     job_id = 0
     max_sample_num = int(
         (config.sim_time * 1000) / (config.dt * config.print_energy_interval)
@@ -506,10 +486,12 @@ def update_scripts(
             run_atm_template = Template(
                 open(template_dir() / "run_atm_template.sh", "r").read()
             ).substitute(
+                pair_name = perturbation_dirname,
                 work_dir=str(free_energy_dpath / perturbation_dirname),
                 fep_type=config.atm_type,
                 gpu_num_per_pair=1,
                 atom_build_path=config.atom_build_pathname,
+                atm_pythonpath = config.atm_pythonpathname,
                 device_index=config.gpu_devices[job_id % len(config.gpu_devices)],
             )
             fh.write(str(run_atm_template))
@@ -591,15 +573,18 @@ def update_scripts(
         job_id += 1
 
 
-def submit_localjob(free_energy_dpath: Path) -> None:
+def submit_job(is_slurm: bool, free_energy_dpath: Path) -> None:
     """
-    Submit the atm job to the locoalhost.
+    Submit the atm job to the locoalhost or slurm cluster.
     """
     jobs = {}
     for perturbation_dir in [e for e in free_energy_dpath.iterdir() if e.is_dir()]:
 
         with open(f"{perturbation_dir}/atm.log", "w") as flog:
-            cmdline = ["/bin/bash", f"{perturbation_dir}/run_atm.sh"]
+            if is_slurm:
+                cmdline = ["sbatch", f"{perturbation_dir}/run_atm.sh"]
+            else:
+                cmdline = ["/bin/bash", f"{perturbation_dir}/run_atm.sh"]
             job = subprocess.Popen(
                 cmdline,
                 stderr=subprocess.PIPE,

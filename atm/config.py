@@ -22,6 +22,7 @@ class AtmConfig:
     forcefield_option: str = "gaff"  # 'gaff', 'openff', 'quickff'
     forcefield_dpathname: str = None
     atom_build_pathname: str = "~/github/ATom_OpenMM"
+    atm_pythonpathname: str = "~/miniconda3/envs/atm-dev/python" # the python pathname from atm-dev env
     atm_type: str = "abfe"  # 'abfe', 'rbfe'
     morph_fpathname: str = None  # 'Morph.in' file that has pairname(ligA~ligB) for rbfe
     morph_type: str = None  # 'star' or 'lomap', to generate Morph.in when not provided
@@ -45,6 +46,7 @@ class AtmConfig:
     disregard_ratio: int = 0.3  # disregard the first 30% samples for analysis.
     gpu_devices: List[int] = None  # available gpu device indexes
     work_dir: str = "."  # atm workflow work dir
+    is_slurm: bool = False # True if run on slurm cluster
 
     # def get(self,name:str)
     def to_dict(self) -> dict:

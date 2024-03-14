@@ -12,7 +12,7 @@ from atm.system import (
     get_alignment,
     parse_protein,
     setup_atm_dir,
-    submit_localjob,
+    submit_job,
     update_scripts,
 )
 
@@ -108,13 +108,18 @@ def run_atm(config_file):
         config=config, protein_info=protein_info, alignment_result=alignment_result
     )
 
-    _stdout, stderr = submit_localjob(
+    _stdout, stderr = submit_job(
+        is_slurm=config.is_slurm,
         free_energy_dpath=Path(f"{config.work_dir}/free_energy")
     )
     if stderr:
         LOGGER.info(stderr.decode("utf-8"))
     else:
-        LOGGER.info("ATM workflow is successfully completed!")
+        if AtmConfig.is_slurm:
+            LOGGER.info("ATM workflow is successfully submitted!")
+        else:
+            LOGGER.info("ATM workflow is successfully completed!")
+
 
 
 if __name__ == "__main__":
