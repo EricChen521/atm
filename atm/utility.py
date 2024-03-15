@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from openff.toolkit.topology import Molecule
-from openmm import XmlSerializer
+from openmm import XmlSerializer, Vec3
 from openmm.app import (
     PME,
     AmberInpcrdFile,
@@ -409,15 +409,21 @@ def create_xml_from_openff(
         cofactor_coords = cofactor_mol.conformers[0].to("angstrom").magnitude
         system.add(cofactor_mmtop, cofactor_coords * angstrom)
 
-    # add solvent
-
+    
     smirnoff = SMIRNOFFTemplateGenerator(molecules=small_mols, forcefield=ligand_ff)
-
     ff.registerTemplateGenerator(smirnoff.generator)
 
+    x_coords =[i[0].value_in_unit(nanometer) for i in system.positions]
+    y_coords = [i[1].value_in_unit(nanometer) for i in system.positions]
+    z_coords = [i[2].value_in_unit(nanometer) for i in system.positions]
+    x_range = (max(x_coords) - min(x_coords))
+    y_range = max(y_coords) - min(y_coords)
+    z_range = max(z_coords) - min(z_coords)
+    boxSize = Vec3(x_range +2, y_range+2, z_range+2)*nanometer # 2 nM padding 
+    # add solvent to fukk boxSize
     system.addSolvent(
         ff,
-        padding=10 * angstrom,
+        boxSize=boxSize,
     )
 
     sys = ff.createSystem(

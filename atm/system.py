@@ -261,7 +261,7 @@ def setup_atm_dir(  # noqa: C901
             if parameters:
                 for params in parameters:
                     # logging.info(params)
-                    logging.info("running openff for pair")
+                    logging.info(f"running openff for pair {params[1].parent.name}~{params[5].parent.name}.")
                     proc = Process(
                         target=create_xml_from_openff,
                         args=(
@@ -464,6 +464,18 @@ def update_scripts(
         (config.sim_time * 1000) / (config.dt * config.print_energy_interval)
     )
 
+    #update the analyze template file
+    with open(free_energy_dpath.parent/"analyze.sh", "w") as fh:
+        analyze_template = Template(
+            open(template_dir()/"analyze.sh","r").read()
+        ).safe_substitute(
+            free_energy_dir = str(free_energy_dpath),
+            start_frame_index = int(max_sample_num/3),
+            final_frame_index = max_sample_num,
+            atm_dev_env = f"{Path(config.atm_pythonpathname).parents[3]}/bin/activate atm-dev"
+        )
+        fh.write(str(analyze_template))
+
     for perturbation_dirname in [
         e.name for e in free_energy_dpath.iterdir() if e.is_dir()
     ]:
@@ -582,7 +594,7 @@ def submit_job(is_slurm: bool, free_energy_dpath: Path) -> None:
 
         with open(f"{perturbation_dir}/atm.log", "w") as flog:
             if is_slurm:
-                cmdline = ["sbatch", f"{perturbation_dir}/run_atm.sh"]
+                cmdline = ["sbatch", "--parsable",f"{perturbation_dir}/run_atm.sh"]
             else:
                 cmdline = ["/bin/bash", f"{perturbation_dir}/run_atm.sh"]
             job = subprocess.Popen(
@@ -595,10 +607,14 @@ def submit_job(is_slurm: bool, free_energy_dpath: Path) -> None:
 
     LOGGER.info("Running ATM calculation...")
     for pertub_dir, procs in jobs.items():
-        _stdout, stderr = procs.communicate()
+        stdout, stderr = procs.communicate()
      
         if stderr:
             with open(pertub_dir / "err.log", "w") as fh:
                 fh.write(stderr.decode("utf-8"))
+        if stdout:
+            with open(pertub_dir/"stdout.log","w") as fh:
+                fh.write(stdout.decode("utf-8"))
 
-        return _stdout, stderr
+
+        return stdout, stderr
