@@ -1,11 +1,7 @@
 #!/bin/bash
 
-SCRIPT_PATH=`realpath $0`
-SCRIPT_DIR=`dirname $SCRIPT_PATH`
-UWHAT_SCRIPT=$SCRIPT_DIR/uwham_analysis.R
-
 source ${atm_dev_env}
-#source ~/miniconda3/bin/activate atm
+UWHAT_SCRIPT=${uwhat_script_pathname}
 cd $free_energy_dir
 echo "name0,name1,ddG_convergence,error,start_frame,end_frame" >> ../ddG_convergence.dat
 echo "name0,name1,ddG_value,error,start_frame,end_frame" >> ../atm_results.dat

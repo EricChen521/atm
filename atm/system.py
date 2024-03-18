@@ -469,6 +469,7 @@ def update_scripts(
         analyze_template = Template(
             open(template_dir()/"analyze.sh","r").read()
         ).safe_substitute(
+            uwhat_script_pathname=str(template_dir()/"uwham_analysis.R"),
             free_energy_dir = str(free_energy_dpath),
             start_frame_index = int(max_sample_num/3),
             final_frame_index = max_sample_num,
