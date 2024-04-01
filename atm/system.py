@@ -103,7 +103,7 @@ def setup_atm_dir(  # noqa: C901
     """
     Generate the xml/pdb unput for `free_energy` dir
     """
-    protein_fpath = Path(config.protein_fpathname).resolve()
+    protein_fpath = Path(config.work_dir+"/_parse_protein/protein_intact.pdb").resolve()
     ligand_dpath = Path(config.ligand_dpathname).resolve()
     cofactor_fpath = (
         Path(config.cofactor_fpathname).resolve() if config.cofactor_fpathname else None
@@ -451,12 +451,14 @@ def update_scripts(
 
     # sanity check to ensure the CA_ids match complex.pdb CA atoms
 
-    complex_stuct = open(next(free_energy_dpath.iterdir())/"complex.pdb","r").readlines()
+    complex_fpath = next(free_energy_dpath.iterdir())/"complex.pdb"
+    complex_stuct = open(complex_fpath,"r").readlines()
     for line in complex_stuct:
         if "HETAM" in line or "ATOM" in line:
             if line.split()[2] == "CA":
                 CA_id = int(line.split()[1]) - 1 
-                assert CA_id in CA_ids, f"CA_id: {CA_id} not found in atom.cntl file, double check input sturcture file!"
+                assert CA_id in CA_ids, f"CA_id: {CA_id} of {complex_fpath} not found in atom.cntl file,"+ \
+                    " double check input sturcture file for missing atoms!"
         
     LOGGER.info("CA ids check passed")
     job_id = 0

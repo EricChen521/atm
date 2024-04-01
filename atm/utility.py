@@ -355,7 +355,7 @@ def create_xml_from_openff(
     cofactor_fpath: Optional[Path] = None,
     protein_ff: str = "amber14-all.xml",
     solvent_ff: str = "amber14/tip3p.xml",
-    ligand_ff: str = "openff-2.0.0",
+    ligand_ff: str = "openff-2.1.0",
     is_hmass: bool = False,
 ) -> Tuple[Path]:
     """
