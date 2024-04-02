@@ -339,7 +339,7 @@ def parse_protein(
     return a dict:
         key = CA_ids, value = a list of 'CA' indexes, index starts from 0
         key = vsite_CA_ids, value = a list of vsite 'CA' indexes, index starts from 0
-        key = N_atoms, value = the total atom number of the protein, including ions.
+        key = N_atoms, value = the total atom number of the protein, including ions, waters.
     """
     protein_fpath = Path(config.protein_fpathname)
     ref_ligand_fpath = Path(
@@ -372,24 +372,23 @@ def parse_protein(
                 for residue in chain:
                     # tleap will rearrange the complex as:
                     # protein --> ion ->left_ligand -> right-ligand -> water
-                    # here, we need to get the total number of the protein and ions,
+                    # here, we need to get the total number of the protein, ions, waters,
                     # if any.
-                    if residue.get_resname() not in ["WAT", "K+", "Cl-"]:
-                        for atom in residue:
-                            # idx starts from 0 to match openmm
-                            atom_idx = atom.get_serial_number() - 1
-                            N_atoms += 1
-                            if atom.get_name() == "CA":
-                                CA_ids.append(atom_idx)
-                                atom_vec = atom.get_vector()
-                                atom_coords = np.array(
-                                    (atom_vec[0], atom_vec[1], atom_vec[2])
-                                ).reshape((1, 3))
-                                if (
-                                    np.amin(distance_matrix(atom_coords, ligand_coords))
-                                    <= config.vsite_radius
-                                ):
-                                    vsite_CA_ids.append(atom_idx)
+                    for atom in residue:
+                        # idx starts from 0 to match openmm
+                        atom_idx = atom.get_serial_number() - 1
+                        N_atoms += 1
+                        if atom.get_name() == "CA":
+                            CA_ids.append(atom_idx)
+                            atom_vec = atom.get_vector()
+                            atom_coords = np.array(
+                                (atom_vec[0], atom_vec[1], atom_vec[2])
+                            ).reshape((1, 3))
+                            if (
+                                np.amin(distance_matrix(atom_coords, ligand_coords))
+                                <= config.vsite_radius
+                            ):
+                                vsite_CA_ids.append(atom_idx)
     result = {"CA_ids": CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": N_atoms}
 
     with open("protein_struc.pickle", "wb") as fh:
