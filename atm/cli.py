@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from atm.config import AtmConfig
-from atm.forcefield import Gaff
+from atm.forcefield import Gaff, Quickgaff
 from atm.system import (
     calc_displ_vec,
     get_alignment,
@@ -15,6 +15,7 @@ from atm.system import (
     submit_job,
     update_scripts,
 )
+from atm.utility import check_atm_input
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,7 @@ def run_atm(config_file):
     """Run ATM  workflow based on the yaml parameter file."""
     config = AtmConfig()
     config.update_param(Path(config_file).resolve())
+    check_atm_input(config)
 
     # update relative paths to absolute paths
     for k, v in config.__dict__.items():
@@ -46,33 +48,19 @@ def run_atm(config_file):
     with open(work_dpath / "ref.dat", "w") as fh:
         fh.write(f"{config.ref_ligname} {config.ref_ligdG}\n")
 
-    ligand_dpath = Path(config.ligand_dpathname).resolve()
-
-    if Path("protein_info.pickle").is_file():
-        LOGGER.info("Read protein information from the pickle file.")
-        with open("protein_info.pickle", "rb") as fh:
-            protein_info = pickle.load(fh)
-    else:
-        protein_info = parse_protein(config=config)
+    ligand_dpath = Path(config.ligand_dpathname).resolve()  
 
     if config.displ_vec:
         LOGGER.info(f"Use user specified displacement vector: {config.displ_vec}.")
-    elif Path("displacement_vec.pickle").is_file():
-        LOGGER.info("Read displacement vector from pickle file.")
-        with open("displacement_vec.pickle", "rb") as fh:
-            displacement_vec = pickle.load(fh)
     else:
         LOGGER.info("calculating displacement vector.")
         displacement_vec = calc_displ_vec(config=config)
         config.displ_vec = displacement_vec.tolist()
     
-    if config.forcefield_dpathname and Path(config.forcefield_dpathname).is_dir():
+    assert config.forcefield_option in ["gaff","quickgaff","openff"], f"forcefield {config.forcefield_option} is not supported."
+    LOGGER.info(f"Generate forcefield with {config.forcefield_option}.")
 
-        LOGGER.info(f"Use the provided forcefiled from {config.forcefield_dpathname}.")
-
-    elif config.forcefield_option in ["gaff", "quickgaff"]:
-
-        LOGGER.info(f"Generate forcefield with {config.forcefield_option}.")
+    if config.forcefield_option =="gaff":
         # generate the gaff based forcefield for ligands/cofactor
         ff = Gaff(
             ligands_dpath=ligand_dpath,
@@ -82,19 +70,24 @@ def run_atm(config_file):
             forcefield_dpath=Path(config.work_dir) / "forcefield",
         )
         ff.produce()
-        config.forcefield_dpathname = str(Path(config.work_dir)/"forcefield")
 
-    elif config.forcefield_option == "openff":
-        pass
-
-    else:
-        raise NotImplementedError(f"{config.forcefield_option} is not implemented yet.")
+    elif config.forcefield_option == "quickgaff":
+        ff = Quickgaff(
+            ligands_dpath=ligand_dpath,
+            cofactor_dpath=Path(config.cofactor_fpathname).parent
+            if config.cofactor_fpathname
+            else None,
+            forcefield_dpath=Path(config.work_dir) / "forcefield",
+        )
+        ff.produce()
+    
+    if config.forcefield_option in ["gaff","quickgaff"]:
+        assert (Path(config.work_dir) / "forcefield").is_dir(), f"forcefield generation by {config.forcefield_option} failed"
+        
+    config.forcefield_dpathname = str(Path(config.work_dir) / "forcefield")
 
     # setup the `free_energy` dir
-    config.write_to_yaml()
-    LOGGER.info(f"setup atm dir for {config.atm_type}.")
     setup_atm_dir(config=config)
-
     alignment_result = get_alignment(config=config)
 
     # reverse the displacemnet vector if this is abfe as
@@ -102,7 +95,17 @@ def run_atm(config_file):
     if config.atm_type == "abfe":
         config.displ_vec = (-displacement_vec).tolist()
 
+    if config.is_slurm:
+        LOGGER.info("Use AWS slurm system with GPU:0")
+        config.gpu_devices=[0]
+
     config.write_to_yaml()
+
+    complex_pdb_fpath = next(Path(f"{config.work_dir}/free_energy").iterdir())/"complex.pdb"
+    protein_info = parse_protein(
+        complex_pdb_fpath=complex_pdb_fpath,
+        vsite_radius=config.vsite_radius,
+        )
 
     update_scripts(
         config=config, protein_info=protein_info, alignment_result=alignment_result

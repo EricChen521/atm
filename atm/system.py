@@ -3,7 +3,8 @@ import pickle
 import shutil
 import subprocess
 
-from multiprocessing import Process
+import multiprocessing
+from multiprocessing import Process, Pool
 from pathlib import Path
 from string import Template
 from typing import Dict
@@ -23,6 +24,7 @@ from atm.utility import (
     create_amber_system,
     create_xml_from_amber,
     create_xml_from_openff,
+    multi_run_wrapper,
     generate_morph_graph,
     template_dir,
     tmp_cd,
@@ -103,7 +105,8 @@ def setup_atm_dir(  # noqa: C901
     """
     Generate the xml/pdb unput for `free_energy` dir
     """
-    protein_fpath = Path(config.work_dir+"/_parse_protein/protein_intact.pdb").resolve()
+    LOGGER.info(f"setup atm dir for {config.atm_type}.")
+    protein_fpath = Path(config.protein_fpathname).resolve()
     ligand_dpath = Path(config.ligand_dpathname).resolve()
     cofactor_fpath = (
         Path(config.cofactor_fpathname).resolve() if config.cofactor_fpathname else None
@@ -139,13 +142,13 @@ def setup_atm_dir(  # noqa: C901
                     for e in open(config.morph_fpathname).read().split("\n")
                     if e.strip()
                 ]
-                for pair_name in [e for e in pair_names if not Path(e).is_dir()]:
+                # only do the pairs not done before by checking the existence of 'complex.pdb' file
+                for pair_name in [e for e in pair_names if not (Path(e)/"complex.pdb").is_file()]:
 
                     Path(pair_name).resolve().mkdir(parents=True, exist_ok=True)
                     left_ligand_name, right_ligand_name = pair_name.split("~")
                     with tmp_cd(pair_name):
-
-                        if config.forcefield_option in ["gaff", "quickff"]:
+                        if config.forcefield_option in ["gaff", "quickgaff"]:
                             forcefield_dpath = Path(config.forcefield_dpathname)
                             lig_idx = 1
                             for lig in [left_ligand_name, right_ligand_name]:
@@ -191,12 +194,12 @@ def setup_atm_dir(  # noqa: C901
                             create_xml_from_amber(
                                 amber_top_fpath=Path("complex.prmtop"),
                                 amber_crd_fapth=Path("complex.inpcrd"),
-                                xml_out_fpath=Path("complex.xml"),
+                                xml_out_fpath=Path("complex_sys.xml"),
                                 pdb_out_fpath=Path("complex.pdb"),
                             )
 
                         elif config.forcefield_option == "openff":
-                            Path("complex.pdb").is_file() or parameters.append(
+                                parameters.append(
                                 [
                                     protein_fpath,
                                     ligand_dpath / left_ligand_name / "ligand.sdf",
@@ -259,6 +262,15 @@ def setup_atm_dir(  # noqa: C901
                                 is_hmass=True if config.dt == 0.004 else False,
                             )
             if parameters:
+
+                cpu_number = multiprocessing.cpu_count()
+                proc_num = len(parameters)
+                print(f"cpu number: {cpu_number}, pair number: {proc_num}")
+                with Pool(min(cpu_number,proc_num)) as pool:
+                    result=pool.map(multi_run_wrapper,[(p[0],p[1],p[2],p[3],p[4],p[5],p[6]) for p in parameters])
+                #pool = multiprocessing.Pool(cpu_number)
+                #pool.map(func=create_xml_from_openff,interable=parameters)
+                """
                 for params in parameters:
                     # logging.info(params)
                     logging.info(f"running openff for pair {params[1].parent.name}~{params[5].parent.name}.")
@@ -278,6 +290,7 @@ def setup_atm_dir(  # noqa: C901
                     proc.start()
                 for proc in procs:
                     proc.join()
+                """
 
 
 
@@ -333,66 +346,58 @@ def _ligset_coords(ligands_dir: Path) -> Dict:
 
 
 def parse_protein(
-    config: AtmConfig = None,
+    complex_pdb_fpath: Path = None,
+    vsite_radius: float = 5.0
 ) -> Dict:
     """
     return a dict:
         key = CA_ids, value = a list of 'CA' indexes, index starts from 0
         key = vsite_CA_ids, value = a list of vsite 'CA' indexes, index starts from 0
-        key = N_atoms, value = the total atom number of the protein, including ions, waters.
+        key = N_atoms, value = the total atom number before L1 ligand.
+    
     """
-    protein_fpath = Path(config.protein_fpathname)
-    ref_ligand_fpath = Path(
-        f"{config.ligand_dpathname}/{config.ref_ligname}/ligand.sdf"
+    # get the first ligand coordinate
+
+    lines = open(complex_pdb_fpath,"r").readlines()
+    L1_coords =[]
+    for line in lines:
+        if ("HETATM" in line) and ("L1" in line):
+            temp = line.split()
+            x=float(temp[6])
+            y=float(temp[7])
+            z=float(temp[8])
+            L1_coords.append([x,y,z]) 
+    L1_coords = np.array(L1_coords)
+
+    CA_ids = []
+    vsite_CA_ids = []
+    L1_ids =[]
+    ligand_coords = L1_coords
+    pro_struct = PDBParser(QUIET=True).get_structure(
+        "protein", str(complex_pdb_fpath)
     )
-    tmp_dir = Path("_parse_protein").resolve()
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    with tmp_cd(tmp_dir):
-        # use tleap to fill any missing atoms,
-        # otherwise will cause reference index shift
 
-        create_amber_system(
-            output_top_path="protein_intact.prmtop",
-            output_crd_path="protein_intact.inpcrd",
-            solute_paths=[protein_fpath],
-        )
-        protein_intact_fpathname = str(tmp_dir / "protein_intact.pdb")
-
-
-        CA_ids = []
-        vsite_CA_ids = []
-        N_atoms = 0
-        ligand_coords = _get_solute_coords(ref_ligand_fpath)
-        pro_struct = PDBParser(QUIET=True).get_structure(
-            "protein", protein_intact_fpathname
-        )
-
-        for model in pro_struct:
-            for chain in model:
-                for residue in chain:
-                    # tleap will rearrange the complex as:
-                    # protein --> ion ->left_ligand -> right-ligand -> water
-                    # here, we need to get the total number of the protein, ions, waters,
-                    # if any.
-                    for atom in residue:
-                        # idx starts from 0 to match openmm
-                        atom_idx = atom.get_serial_number() - 1
-                        N_atoms += 1
-                        if atom.get_name() == "CA":
-                            CA_ids.append(atom_idx)
-                            atom_vec = atom.get_vector()
-                            atom_coords = np.array(
-                                (atom_vec[0], atom_vec[1], atom_vec[2])
-                            ).reshape((1, 3))
-                            if (
-                                np.amin(distance_matrix(atom_coords, ligand_coords))
-                                <= config.vsite_radius
-                            ):
-                                vsite_CA_ids.append(atom_idx)
-    result = {"CA_ids": CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": N_atoms}
-
-    with open("protein_struc.pickle", "wb") as fh:
-        pickle.dump(result, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    # Get the atom number for 'L1' ligand
+    for model in pro_struct:
+        for chain in model:
+            for residue in chain:
+                for atom in residue:
+                    # idx starts from 0 to match openmm
+                    atom_idx = atom.get_serial_number() - 1
+                    if residue.get_resname()=="L1":
+                        L1_ids.append(atom_idx)
+                    if atom.get_name() == "CA":
+                        CA_ids.append(atom_idx)
+                        atom_vec = atom.get_vector()
+                        atom_coords = np.array(
+                            (atom_vec[0], atom_vec[1], atom_vec[2])
+                        ).reshape((1, 3))
+                        if (
+                            np.amin(distance_matrix(atom_coords, ligand_coords))
+                            <= vsite_radius
+                        ):
+                            vsite_CA_ids.append(atom_idx)
+    result = {"CA_ids": CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": L1_ids[0]}
 
     return result
 
@@ -471,6 +476,7 @@ def update_scripts(
             open(template_dir()/"analyze.sh","r").read()
         ).safe_substitute(
             uwhat_script_pathname=str(template_dir()/"uwham_analysis.R"),
+            diffnet_script_pathname=str(template_dir()/"diffnet_atm.py"),
             free_energy_dir = str(free_energy_dpath),
             start_frame_index = int(max_sample_num/3),
             final_frame_index = max_sample_num,

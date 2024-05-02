@@ -355,7 +355,7 @@ def create_xml_from_openff(
     cofactor_fpath: Optional[Path] = None,
     protein_ff: str = "amber14-all.xml",
     solvent_ff: str = "amber14/tip3p.xml",
-    ligand_ff: str = "openff-2.1.0",
+    ligand_ff: str = "openff-2.2.0",
     is_hmass: bool = False,
 ) -> Tuple[Path]:
     """
@@ -420,7 +420,7 @@ def create_xml_from_openff(
     y_range = max(y_coords) - min(y_coords)
     z_range = max(z_coords) - min(z_coords)
     boxSize = Vec3(x_range +2, y_range+2, z_range+2)*nanometer # 2 nM padding 
-    # add solvent to fukk boxSize
+    # add solvent to full boxSize
     system.addSolvent(
         ff,
         boxSize=boxSize,
@@ -444,6 +444,9 @@ def create_xml_from_openff(
 
     return (xml_out_fpath, pdb_out_fpath)
 
+
+def multi_run_wrapper(args):
+    return create_xml_from_openff(*args)
 
 def generate_morph_graph(
     morph_type: str,  # star or lomap
@@ -493,3 +496,14 @@ def generate_morph_graph(
                         fh.write(f"{name_dict[lig1_idx]}~{name_dict[lig2_idx]}\n")
 
     return morph_fpath
+
+def check_atm_input(config):
+    """
+    Check the input files for ATM
+    """
+
+    assert Path(config.ligand_dpathname).is_dir(), "not ligand dir found"
+    assert Path(config.protein_fpathname).is_file(),"no protein file found"
+    
+    if Path(config.cofactor_fpathname).is_file():
+        assert Path(config.cofactor_fpathname).name == "cofactor.sdf", "you have to put cofactor as '[name]/cofactor.sdf'"

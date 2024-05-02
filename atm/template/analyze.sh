@@ -2,6 +2,7 @@
 
 source ${atm_dev_env}
 UWHAT_SCRIPT=${uwhat_script_pathname}
+DIFFNET_SCRIPT=${diffnet_script_pathname}
 cd $free_energy_dir
 echo "name0,name1,ddG_convergence,error,start_frame,end_frame" >> ../ddG_convergence.dat
 echo "name0,name1,ddG_value,error,start_frame,end_frame" >> ../atm_results.dat
@@ -34,3 +35,5 @@ do
 		cd ..
 	fi
 done
+cd ..
+python $DIFFNET_SCRIPT --atm-dat atm_results.dat --ref-file ref.dat --result-dir .

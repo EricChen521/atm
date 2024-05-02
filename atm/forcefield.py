@@ -40,15 +40,16 @@ class Gaff:
                 f"parmchk2 -i {ligand_ff_dir}/vacuum.mol2 -f mol2"
                 f" -o {ligand_ff_dir}/vacuum.frcmod"
             ]
-
-            child_process = subprocess.Popen(
-                cmdline,
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                shell=True,
-                cwd=ligand_ff_dir,
-            )
-            procs.update({ligand_ff_dir: child_process})
+            # execuate if the vaccum.mol2 file is not there
+            if not (ligand_ff_dir/ligand_dir.name/"vaccum.mol2").is_file():
+                child_process = subprocess.Popen(
+                    cmdline,
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    shell=True,
+                    cwd=ligand_ff_dir,
+                )
+                procs.update({ligand_ff_dir: child_process})
 
         if (
             self.cofactor_dpath
@@ -100,23 +101,43 @@ class Gaff:
 
 
 @dataclass
-class Quickff:
-    """A quickff engine."""
+class Quickgaff:
+    """A quickgaff engine."""
 
-    ligands_dir: Path = None
-    forcefield_dir: Path = None
+    ligands_dpath: Path = None
+    forcefield_dpath: Path = None
+    cofactor_dpath: Path = None
+    miniconda3_pathname: str = '/home/eric.chen/miniconda3'
 
     def produce(
         self,
     ) -> None:
         """Run quickff kernel."""
-        cmdline = [
-            f"parmedizer apply {self.ligands_dir}/*/ligand.sdf --retyper amber_legacy"
-        ]
-        p = subprocess.run(cmdline, capture_output=True, text=True)
+        cmdline = f". {self.miniconda3_pathname}/bin/activate parmedizer-dev;"+\
+        f" parmedizer apply {self.ligands_dpath}/*/ligand.sdf --retyper amber_legacy"   
+        print(cmdline)
+        p = subprocess.run(cmdline, shell=True,executable="/usr/bin/bash", capture_output=True, text=True)
+
+        if self.cofactor_dpath:
+
+            cofactor_fpath=self.cofactor_dpath/"cofactor.sdf"
+            mol = Chem.SDMolSupplier(str(cofactor_fpath), removeHs=False)[0]
+            charge = Chem.rdmolops.GetFormalCharge(mol)
+
+            cmdline = [
+                f"antechamber -i {cofactor_fpath} -fi sdf -o "
+                f"{cofactor_fpath.parent}/cofactor.mol2 -fo "
+                f"mol2 -rn COF -c bcc -nc {str(charge)}; "
+                f"parmchk2 -i {cofactor_fpath.parent}/cofactor.mol2 -f mol2"
+                f" -o {cofactor_fpath.parent}/cofactor.frcmod"
+            ]
+            subprocess.Popen(
+                cmdline,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                shell=True,
+                cwd=self.cofactor_dpath,
+            )
         if p.stderr:
-            with open("Quickff.err", "w") as fh:
+            with open("quickgaff.log", "w") as fh:
                 fh.write(p.stderr)
-        if p.stdout:
-            with open("Quickff.log", "w") as fh:
-                fh.write(p.stdout)
