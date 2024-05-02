@@ -78,6 +78,7 @@ def run_atm(config_file):
             if config.cofactor_fpathname
             else None,
             forcefield_dpath=Path(config.work_dir) / "forcefield",
+            miniconda3_pathname = str(Path(config.atm_pythonpathname).parents[3]),
         )
         ff.produce()
     
