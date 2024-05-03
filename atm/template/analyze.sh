@@ -36,4 +36,4 @@ do
 	fi
 done
 cd ..
-python $DIFFNET_SCRIPT --atm-dat atm_results.dat --ref-file ref.dat --result-dir . --new-csv .
+python $DIFFNET_SCRIPT --atm-dat atm_results.dat --ref-file ref.dat --result-dir . --new-csv 
