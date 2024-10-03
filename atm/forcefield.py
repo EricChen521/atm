@@ -41,7 +41,9 @@ class Gaff:
                 f" -o {ligand_ff_dir}/vacuum.frcmod"
             ]
             # execuate if the vaccum.mol2 file is not there
-            if not (ligand_ff_dir/ligand_dir.name/"vaccum.mol2").is_file():
+            if not (ligand_ff_dir/"vacuum.mol2").is_file():
+                
+                print(f"Run gaff for {ligand_ff_dir}...")
                 child_process = subprocess.Popen(
                     cmdline,
                     stderr=subprocess.PIPE,
@@ -98,6 +100,7 @@ class Gaff:
             else:
                 print(f"gaff failed for {ligand_ff_dir.name}")
                 shutil.rmtree(ligand_ff_dir)
+        print("Gaff forcefield is genereated successfully!")
 
 
 @dataclass

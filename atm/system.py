@@ -199,18 +199,19 @@ def setup_atm_dir(  # noqa: C901
                             )
 
                         elif config.forcefield_option == "openff":
-                                parameters.append(
-                                [
-                                    protein_fpath,
-                                    ligand_dpath / left_ligand_name / "ligand.sdf",
-                                    translation_vec,
-                                    Path("./complex_sys.xml").resolve(),
-                                    Path("./complex.pdb").resolve(),
-                                    ligand_dpath / right_ligand_name / "ligand.sdf",
-                                    cofactor_fpath if cofactor_fpath else None,
-                                    True if config.dt == 0.04 else False,
-                                ]
-                            )
+                                if not Path("./complex_sys.xml").is_file():
+                                    parameters.append(
+                                        [
+                                            protein_fpath,
+                                            ligand_dpath / left_ligand_name / "ligand.sdf",
+                                            translation_vec,
+                                            Path("./complex_sys.xml").resolve(),
+                                            Path("./complex.pdb").resolve(),
+                                            ligand_dpath / right_ligand_name / "ligand.sdf",
+                                            cofactor_fpath if cofactor_fpath else None,
+                                            True if config.dt == 0.04 else False,
+                                        ]
+                                    )
 
             elif config.atm_type == "abfe":
                 ligand_names = config.abfe_ligands or [
@@ -509,6 +510,7 @@ def update_scripts(
                 pair_name = perturbation_dirname,
                 work_dir=str(free_energy_dpath / perturbation_dirname),
                 fep_type=config.atm_type,
+                partition=config.partition,
                 gpu_num_per_pair=1,
                 atom_build_path=config.atom_build_pathname,
                 atm_pythonpath = config.atm_pythonpathname,

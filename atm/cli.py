@@ -97,7 +97,7 @@ def run_atm(config_file):
         config.displ_vec = (-displacement_vec).tolist()
 
     if config.is_slurm:
-        LOGGER.info("Use AWS slurm system with GPU:0")
+        LOGGER.info("Use slurm system with GPU:0")
         config.gpu_devices=[0]
 
     config.write_to_yaml()

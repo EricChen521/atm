@@ -47,6 +47,7 @@ class AtmConfig:
     gpu_devices: List[int] = None  # available gpu device indexes
     work_dir: str = "."  # atm workflow work dir
     is_slurm: bool = False # True if run on slurm cluster
+    partition: str = None # the partition of cluster to run atm
 
     # def get(self,name:str)
     def to_dict(self) -> dict:

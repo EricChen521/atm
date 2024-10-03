@@ -376,7 +376,7 @@ def create_xml_from_openff(
     )
     lig1_mmtop = lig1_mol.to_topology().to_openmm(ensure_unique_atom_names=True)
     # print(next(lig1_mmtop.residues()).name)
-    next(lig1_mmtop.residues()).name = "LIG1"
+    next(lig1_mmtop.residues()).name = "L1"
     lig1_coords = lig1_mol.conformers[0].to("angstrom").magnitude
     small_mols.append(lig1_mol)
     # abfe
@@ -392,7 +392,7 @@ def create_xml_from_openff(
         )
         small_mols.append(lig2_mol)
         lig2_mmtop = lig2_mol.to_topology().to_openmm(ensure_unique_atom_names=True)
-        next(lig2_mmtop.residues()).name = "LIG2"
+        next(lig2_mmtop.residues()).name = "L2"
         lig2_coords = lig2_mol.conformers[0].to("angstrom").magnitude
         translated_lig2_coords = lig2_coords + translation_vec
         system.add(lig2_mmtop, translated_lig2_coords * angstrom)

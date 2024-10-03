@@ -3,7 +3,7 @@
 #SBATCH -J $pair_name
 #SBATCH --output=atm.log
 #SBATCH --error=atm.err
-#SBATCH --partition=atm-ondemand
+#SBATCH --partition=${partition}
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1

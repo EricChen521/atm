@@ -1,15 +1,16 @@
 abfe_ligands: null
 atm_type: rbfe
-atom_build_pathname: ~/github/ATom_OpenMM
+atom_build_pathname: ~/github/AToM_OpenMM
 atm_pythonpathname: ~/miniconda3/envs/atm-dev/bin/python3.10
 is_slurm: False
+partition: g2 # the partition of hpc to run atm
 cofactor_fpathname: ./001.prep/cofactors/GDP/cofactor.sdf
 displ_vec: null
 disregard_ratio: 0.3
 dt: 0.002
 exchange_interval: 20000
 forcefield_option: gaff
-gpu_devices: [1,2,3,4]
+gpu_devices: [0]
 kforce_displ: 2.5
 kforce_psi: 50.0
 kforce_theta: 50.0
