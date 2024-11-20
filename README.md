@@ -24,11 +24,16 @@ Step 5 Install UWHAT packagge in the atm-dev env by:
 conda activate atm-dev
 Rscript -e 'install.packages("UWHAM", repos = "http://cran.us.r-project.org")' 
 ```
-Step 5 Update the system settings in **atm_config.yaml**:
+Step 5 Update the system settings and input file paths such as protien, ligands and cofactor in **atm_config.yaml**:
 ```
 atm_pythonpathname
 atom_build_pathname
 is_slurm
 gpu_devices 
+```
+Step 6 Activate the env and run the ATM calculation
+```
+conda activate atm-dev
+atm -c atm_config.yaml
 ```
   
