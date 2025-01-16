@@ -511,6 +511,7 @@ def update_scripts(
                 work_dir=str(free_energy_dpath / perturbation_dirname),
                 fep_type=config.atm_type,
                 partition=config.partition,
+                gres=config.gres,
                 gpu_num_per_pair=1,
                 atom_build_path=config.atom_build_pathname,
                 atm_pythonpath = config.atm_pythonpathname,

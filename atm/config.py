@@ -45,6 +45,7 @@ class AtmConfig:
     print_traj_interval: int = 60000  # step interval to print coords.
     disregard_ratio: int = 0.3  # disregard the first 30% samples for analysis.
     gpu_devices: List[int] = None  # available gpu device indexes
+    gres: int = 4 # the GPU number of th node requested by atm job
     work_dir: str = "."  # atm workflow work dir
     is_slurm: bool = False # True if run on slurm cluster
     partition: str = None # the partition of cluster to run atm

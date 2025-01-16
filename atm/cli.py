@@ -98,7 +98,7 @@ def run_atm(config_file):
 
     if config.is_slurm:
         LOGGER.info("Use slurm system with GPU:0")
-        config.gpu_devices=[0]
+        config.gpu_devices=[i for i in range(config.gres)]
 
     config.write_to_yaml()
 
