@@ -1,5 +1,4 @@
 import logging
-import pickle
 import shutil
 import subprocess
 
@@ -83,9 +82,6 @@ def calc_displ_vec(
     displ_vec = np.round((small_area_center - distant_lig_atom_coords), 2)
     print(f"displacemnet vector: {displ_vec}")
 
-    with open("displacement_vec.pickle", "wb") as fh:
-        pickle.dump(displ_vec, fh, protocol=pickle.HIGHEST_PROTOCOL)
-
     return displ_vec
 
 
@@ -148,7 +144,7 @@ def setup_atm_dir(  # noqa: C901
                     Path(pair_name).resolve().mkdir(parents=True, exist_ok=True)
                     left_ligand_name, right_ligand_name = pair_name.split("~")
                     with tmp_cd(pair_name):
-                        if config.forcefield_option in ["gaff", "quickgaff"]:
+                        if config.forcefield_option == 'gaff2':
                             forcefield_dpath = Path(config.forcefield_dpathname)
                             lig_idx = 1
                             for lig in [left_ligand_name, right_ligand_name]:
@@ -190,7 +186,7 @@ def setup_atm_dir(  # noqa: C901
                                 translate=(2, translation_vec),
                                 solute_paths=solute_paths,
                             )
-                            _correct_parm_elem(parm_fpathname="complex.prmtop")
+                
                             create_xml_from_amber(
                                 amber_top_fpath=Path("complex.prmtop"),
                                 amber_crd_fapth=Path("complex.inpcrd"),
@@ -313,25 +309,6 @@ def _get_solute_coords(solute_fpath: Path):  # pdb or sdf file format
 
     return coords
 
-def _correct_parm_elem(parm_fpathname: str):
-    """
-    Correct the atomic number by parmedizer
-    """
-
-    import parmed
-
-    from parmed.periodic_table import AtomicNum
-
-    shutil.copyfile(parm_fpathname, parm_fpathname + ".ori")
-    mol = parmed.load_file(parm_fpathname)
-    for a in mol.atoms:
-
-        element_name = parmed.periodic_table.element_by_mass(a.mass)
-        if a.atomic_number != AtomicNum[element_name]:
-            a.atomic_number = AtomicNum[element_name]
-            a.element = AtomicNum[element_name]
-
-    mol.save(parm_fpathname, overwrite=True)
     
 def _ligset_coords(ligands_dir: Path) -> Dict:
     """

@@ -1,5 +1,4 @@
 import logging
-import pickle
 
 from pathlib import Path
 
@@ -57,10 +56,9 @@ def run_atm(config_file):
         displacement_vec = calc_displ_vec(config=config)
         config.displ_vec = displacement_vec.tolist()
     
-    assert config.forcefield_option in ["gaff","quickgaff","openff"], f"forcefield {config.forcefield_option} is not supported."
     LOGGER.info(f"Generate forcefield with {config.forcefield_option}.")
 
-    if config.forcefield_option =="gaff":
+    if config.forcefield_option =="gaff2":
         # generate the gaff based forcefield for ligands/cofactor
         ff = Gaff(
             ligands_dpath=ligand_dpath,
@@ -71,19 +69,6 @@ def run_atm(config_file):
         )
         ff.produce()
 
-    elif config.forcefield_option == "quickgaff":
-        ff = Quickgaff(
-            ligands_dpath=ligand_dpath,
-            cofactor_dpath=Path(config.cofactor_fpathname).parent
-            if config.cofactor_fpathname
-            else None,
-            forcefield_dpath=Path(config.work_dir) / "forcefield",
-            miniconda3_pathname = str(Path(config.atm_pythonpathname).parents[3]),
-        )
-        ff.produce()
-    
-    if config.forcefield_option in ["gaff","quickgaff"]:
-        assert (Path(config.work_dir) / "forcefield").is_dir(), f"forcefield generation by {config.forcefield_option} failed"
         
     config.forcefield_dpathname = str(Path(config.work_dir) / "forcefield")
 
@@ -97,7 +82,7 @@ def run_atm(config_file):
         config.displ_vec = (-displacement_vec).tolist()
 
     if config.is_slurm:
-        LOGGER.info("Use slurm system with GPU:0")
+        LOGGER.info(f"Use slurm system with nodes have at least {config.gres} GPUs")
         config.gpu_devices=[i for i in range(config.gres)]
 
     config.write_to_yaml()

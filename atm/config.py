@@ -19,7 +19,7 @@ class AtmConfig:
     protein_fpathname: str = None
     ligand_dpathname: str = None
     cofactor_fpathname: str = None
-    forcefield_option: str = "gaff"  # 'gaff', 'openff', 'quickgaff'
+    forcefield_option: str = "gaff"  # 'gaff2', 'openff', 
     forcefield_dpathname: str = None
     atom_build_pathname: str = "~/github/ATom_OpenMM"
     atm_pythonpathname: str = "~/miniconda3/envs/atm-dev/python" # the python pathname from atm-dev env

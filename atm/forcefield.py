@@ -36,7 +36,7 @@ class Gaff:
             cmdline = [
                 f"antechamber -i {ligand_fpath} -fi sdf -o "
                 f"{ligand_ff_dir}/vacuum.mol2 -fo "
-                f"mol2 -rn LIG -c bcc -nc {str(charge)}; "
+                f"mol2 -rn LIG -c bcc -at gaff2 -nc {str(charge)}; "
                 f"parmchk2 -i {ligand_ff_dir}/vacuum.mol2 -f mol2"
                 f" -o {ligand_ff_dir}/vacuum.frcmod"
             ]
@@ -63,7 +63,7 @@ class Gaff:
             cmdline = [
                 f"antechamber -i {cofactor_fpath} -fi sdf -o "
                 f"{cofactor_fpath.parent}/cofactor.mol2 -fo "
-                f"mol2 -rn COF -c bcc -nc {str(charge)}; "
+                f"mol2 -rn COF -c bcc -at gaff2 -nc {str(charge)}; "
                 f"parmchk2 -i {cofactor_fpath.parent}/cofactor.mol2 -f mol2"
                 f" -o {cofactor_fpath.parent}/cofactor.frcmod"
             ]

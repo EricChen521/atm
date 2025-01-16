@@ -211,27 +211,6 @@ def _reverse_AT(fpath: Union[Path, str]) -> Path:
     return out_fpath
 
 
-# FIXME Add this function to parmedizer
-def _correct_parm(parm_file):
-    """
-    Correct topology file that generatd from FFquick
-    """
-
-    import parmed
-
-    from parmed.periodic_table import AtomicNum
-
-    mol = parmed.load_file(parm_file)
-
-    for a in mol.atoms:
-        element_name = parmed.periodic_table.element_by_mass(a.mass)
-        if a.atomic_number != AtomicNum[element_name]:
-            a.atomic_number = AtomicNum[element_name]
-            a.element = AtomicNum[element_name]
-
-    mol.save(parm_file, overwrite=True)
-
-
 def create_amber_system(
     output_top_path: Union[Path, str],
     output_crd_path: Union[Path, str],
@@ -308,7 +287,7 @@ def create_amber_system(
     cmd = ["tleap", "-f", f"{output_top_path.parent}/tleap.in"]
     with tmp_cd(output_top_path.parent):
         subprocess.run(cmd, check=True, text=True, capture_output=True)
-        _correct_parm(str(output_top_path))
+
 
     for tmp_path in to_be_cleanedup:
         tmp_path.unlink()
@@ -355,7 +334,7 @@ def create_xml_from_openff(
     cofactor_fpath: Optional[Path] = None,
     protein_ff: str = "amber14-all.xml",
     solvent_ff: str = "amber14/tip3p.xml",
-    ligand_ff: str = "openff-2.2.0",
+    ligand_ff: str = "openff-2.2.1.offxml",
     is_hmass: bool = False,
 ) -> Tuple[Path]:
     """
