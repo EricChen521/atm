@@ -58,12 +58,12 @@ def calc_displ_vec(
     axes = sorted([x_range, y_range, z_range], key=lambda v: v[2] - v[1])
     small_area_center[int(axes[0][0])] = np.mean(axes[0][1:])
     small_area_center[int(axes[1][0])] = np.mean(axes[1][1:])
-    small_area_center[int(axes[2][0])] = axes[2][2]
+    small_area_center[int(axes[2][0])] = axes[2][2] # max u coordinate
     u = int(axes[2][0])
     # point_1
-
+    #print(f"small_area_center coordiante: {small_area_center}, with u axis: {u}")
     # point_2
-    small_area_center[u] += 10.0
+    small_area_center[u] += 10.0 # max u coordinate + 10
 
     # find the smallest U in all ligands.
 
@@ -75,13 +75,13 @@ def calc_displ_vec(
     for _k, v in ligandset_coords.items():
         ligands_coords = np.concatenate((ligands_coords, v), axis=0)
 
-    distant_lig_atom_coords = ligands_coords[
-        ligands_coords[:, int(axes[2][0])].argsort()
-    ][-1, :]
+    sorted_u_index = ligands_coords[:, u].argsort()
+    sorted_u_coords = ligands_coords[sorted_u_index]
+    distant_lig_atom_coords = sorted_u_coords[0, :] # minimum u of all ligands
+    #print(f"sorted ligand atom coordiates by {u}: {sorted_u_coords}")
 
     displ_vec = np.round((small_area_center - distant_lig_atom_coords), 2)
     print(f"displacemnet vector: {displ_vec}")
-
     return displ_vec
 
 
@@ -335,16 +335,19 @@ def parse_protein(
     
     """
     # get the first ligand coordinate
-
-    lines = open(complex_pdb_fpath,"r").readlines()
     L1_coords =[]
-    for line in lines:
-        if ("HETATM" in line) and ("L1" in line):
-            temp = line.split()
-            x=float(temp[6])
-            y=float(temp[7])
-            z=float(temp[8])
-            L1_coords.append([x,y,z]) 
+    # delete the added water to avoid PDBParser crash due to too many water
+    with open("dry_solute.pdb","w") as fh:
+        lines = open(complex_pdb_fpath,"r").readlines()
+        for line in lines:
+            if ("HETATM" in line) and ("L1" in line):
+                temp = line.split()
+                x=float(temp[6])
+                y=float(temp[7])
+                z=float(temp[8])
+                L1_coords.append([x,y,z]) 
+            if not (("HETATM" in line) and ("HOH" in line)):
+                fh.write(line)
     L1_coords = np.array(L1_coords)
 
     CA_ids = []
@@ -352,7 +355,7 @@ def parse_protein(
     L1_ids =[]
     ligand_coords = L1_coords
     pro_struct = PDBParser(QUIET=True).get_structure(
-        "protein", str(complex_pdb_fpath)
+        "protein", "dry_solute.pdb"
     )
 
     # Get the atom number for 'L1' ligand

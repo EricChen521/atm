@@ -88,11 +88,12 @@ def run_atm(config_file):
     config.write_to_yaml()
 
     complex_pdb_fpath = next(Path(f"{config.work_dir}/free_energy").iterdir())/"complex.pdb"
+    print(f"sample protein for paring: {complex_pdb_fpath}")
     protein_info = parse_protein(
         complex_pdb_fpath=complex_pdb_fpath,
         vsite_radius=config.vsite_radius,
         )
-
+    
     update_scripts(
         config=config, protein_info=protein_info, alignment_result=alignment_result
     )
