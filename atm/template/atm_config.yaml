@@ -10,7 +10,7 @@ displ_vec: null
 disregard_ratio: 0.3
 dt: 0.002
 exchange_interval: 20000
-forcefield_option: gaff2 # forcefield for ligands/cofactor, [gaff2, openff-2.2.1.offxml] 
+forcefield_option: gaff2 # forcefield for ligands/cofactor, [gaff2, openff] 
 gres: 2  # the gres requested by atm job when on slurm
 gpu_devices: [0,1,2,3] # if not slurm, control which gpu to use
 kforce_displ: 2.5

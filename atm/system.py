@@ -6,7 +6,8 @@ import multiprocessing
 from multiprocessing import Process, Pool
 from pathlib import Path
 from string import Template
-from typing import Dict
+from typing import Dict, List
+from time import gmtime, strftime
 
 
 import numpy as np
@@ -15,7 +16,8 @@ from Bio.PDB import PDBParser
 from rdkit import Chem
 from scipy.spatial import distance_matrix
 from scipy.spatial.distance import cdist
-
+from openmm.app import PDBFile
+from openmm.unit import angstrom, nanometer
 from atm.config import AtmConfig
 from atm.forcefield import Gaff
 from atm.utility import (
@@ -263,8 +265,10 @@ def setup_atm_dir(  # noqa: C901
                 cpu_number = multiprocessing.cpu_count()
                 proc_num = len(parameters)
                 print(f"cpu number: {cpu_number}, pair number: {proc_num}")
+                print(f"start openff calculation at: {strftime('%Y-%m-%d %H:%M:%S', gmtime())}")
                 with Pool(min(cpu_number,proc_num)) as pool:
                     result=pool.map(multi_run_wrapper,[(p[0],p[1],p[2],p[3],p[4],p[5],p[6]) for p in parameters])
+                print(f"complete openff calculation at: {strftime('%Y-%m-%d %H:%M:%S', gmtime())}")
                 #pool = multiprocessing.Pool(cpu_number)
                 #pool.map(func=create_xml_from_openff,interable=parameters)
                 """
@@ -323,65 +327,67 @@ def _ligset_coords(ligands_dir: Path) -> Dict:
     return set_coords
 
 
-def parse_protein(
-    complex_pdb_fpath: Path = None,
-    vsite_radius: float = 5.0
-) -> Dict:
+def parse_protein(complex_pdb_fpath: Path= None,
+                  relaxed_res_ids: List[int]=None ,
+                  vsite_radius: float = 5.0) -> Dict:
+    
     """
-    return a dict:
-        key = CA_ids, value = a list of 'CA' indexes, index starts from 0
-        key = vsite_CA_ids, value = a list of vsite 'CA' indexes, index starts from 0
-        key = N_atoms, value = the total atom number before L1 ligand.
+        Parse the complex.pdb to return:
+            "CA_ids": the CA atom index (0 indexed)
+            "restrianed_CA_ids": the CA atom index to be restrianed in alchemical MD
+            "vsite_CA_ids": The CA atom index in vsite
+            "N_atom": The first atom index of L1
     
     """
     # get the first ligand coordinate
-    L1_coords =[]
-    # delete the added water to avoid PDBParser crash due to too many water
-    with open("dry_solute.pdb","w") as fh:
-        lines = open(complex_pdb_fpath,"r").readlines()
-        for line in lines:
-            if ("HETATM" in line) and ("L1" in line):
-                temp = line.split()
-                x=float(temp[6])
-                y=float(temp[7])
-                z=float(temp[8])
-                L1_coords.append([x,y,z]) 
-            if not (("HETATM" in line) and ("HOH" in line)):
-                fh.write(line)
-    L1_coords = np.array(L1_coords)
+
+    pdb = PDBFile(str(complex_pdb_fpath))
+    positions = pdb.positions
+    ommtopology = pdb.topology
+    print(f"relaxed_res_ids: {relaxed_res_ids}, type: {type(relaxed_res_ids[0])}")
+    
 
     CA_ids = []
+    CA_positions = []
     vsite_CA_ids = []
     L1_ids =[]
-    ligand_coords = L1_coords
-    pro_struct = PDBParser(QUIET=True).get_structure(
-        "protein", "dry_solute.pdb"
-    )
+    L1_positions =[]
+    relax_CA_ids=[]
+    restrained_CA_ids =[]
 
-    # Get the atom number for 'L1' ligand
-    for model in pro_struct:
-        for chain in model:
-            for residue in chain:
-                for atom in residue:
-                    # idx starts from 0 to match openmm
-                    atom_idx = atom.get_serial_number() - 1
-                    if residue.get_resname()=="L1":
-                        L1_ids.append(atom_idx)
-                    if atom.get_name() == "CA":
-                        CA_ids.append(atom_idx)
-                        atom_vec = atom.get_vector()
-                        atom_coords = np.array(
-                            (atom_vec[0], atom_vec[1], atom_vec[2])
-                        ).reshape((1, 3))
-                        if (
-                            np.amin(distance_matrix(atom_coords, ligand_coords))
-                            <= vsite_radius
-                        ):
-                            vsite_CA_ids.append(atom_idx)
-    result = {"CA_ids": CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": L1_ids[0]}
+    # Get the atom index for 'L1' ligand
+    for atom in ommtopology.atoms():
+        if atom.residue.name == "L1":
+            L1_ids.append(atom.index)
+            
+            L1_positions.append([(positions[atom.index]/angstrom)[0],
+                                 (positions[atom.index]/angstrom)[1],
+                                (positions[atom.index]/angstrom)[2]])
+            
+            
+        elif atom.name == "CA":
+            CA_ids.append(atom.index)
+            CA_positions.append([(positions[atom.index]/angstrom)[0],
+                                 (positions[atom.index]/angstrom)[1],
+                                 (positions[atom.index]/angstrom)[2]])
+            
+            if relaxed_res_ids:
+                if int(atom.residue.id) in relaxed_res_ids:
+                    relax_CA_ids.append(atom.index)
+          
+    L1_coords = np.array(L1_positions)  
+    for i in range(len(CA_ids)):
+        CA_coords = np.array(CA_positions[i]).reshape((1,3))
+        min_distance = np.amin(distance_matrix(CA_coords,L1_coords))
+        
+        if min_distance <= vsite_radius:
+            vsite_CA_ids.append(i)
+ 
+    restrained_CA_ids=sorted(list(set(CA_ids) - set(relax_CA_ids)))
+    print(f"relax CA ids: {relax_CA_ids}")       
+    result = {"CA_ids": CA_ids,"restrained_CA_ids": restrained_CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": L1_ids[0]}
 
     return result
-
 
 def get_alignment(config: AtmConfig) -> Dict:
     """
@@ -432,6 +438,7 @@ def update_scripts(
     free_energy_dpath = Path(f"{config.work_dir}/free_energy")
     N_protein = protein_info["N_atoms"]
     CA_ids = protein_info["CA_ids"]
+    restrained_CA_ids = protein_info["restrained_CA_ids"]
     vsite_CA_ids = protein_info["vsite_CA_ids"]
 
     # sanity check to ensure the CA_ids match complex.pdb CA atoms
@@ -516,7 +523,7 @@ def update_scripts(
                         displ=",".join(map(str, config.displ_vec)),
                         lig_atoms=",".join(map(str, lig_atom_ids)),
                         rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
-                        restrained_atoms=",".join(map(str, CA_ids)),
+                        restrained_atoms=",".join(map(str, restrained_CA_ids)),
                         max_sample_num=max_sample_num,
                         exchange_interval=config.exchange_interval,
                         print_energy_interval=config.print_energy_interval,
@@ -561,7 +568,7 @@ def update_scripts(
                         refatoms_lig1=",".join(map(str, lig1_alignment_ids)),
                         refatoms_lig2=",".join(map(str, lig2_alignment_ids)),
                         rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
-                        restrained_atoms=",".join(map(str, CA_ids)),
+                        restrained_atoms=",".join(map(str, restrained_CA_ids)),
                         max_sample_num=max_sample_num,
                         exchange_interval=config.exchange_interval,
                         print_energy_interval=config.print_energy_interval,

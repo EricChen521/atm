@@ -26,6 +26,7 @@ class AtmConfig:
     atm_type: str = "abfe"  # 'abfe', 'rbfe'
     morph_fpathname: str = None  # 'Morph.in' file that has pairname(ligA~ligB) for rbfe
     morph_type: str = None  # 'star' or 'lomap', to generate Morph.in when not provided
+    relaxed_res_ids: List[int] = None # # the residue id without positional restraint. such as [58,59,60](index based on pdb file)
     abfe_ligands: Tuple[str] = None  # ligand for abfe, otherwise, abfe for all ligands
     vsite_radius: float = 5.0  # unit in Å to define viste
     ref_ligname: str = None  # reference ligand name

@@ -91,6 +91,7 @@ def run_atm(config_file):
     print(f"sample protein for paring: {complex_pdb_fpath}")
     protein_info = parse_protein(
         complex_pdb_fpath=complex_pdb_fpath,
+        relaxed_res_ids=config.relaxed_res_ids,
         vsite_radius=config.vsite_radius,
         )
     
