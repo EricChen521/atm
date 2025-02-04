@@ -48,7 +48,7 @@ def calc_displ_vec(
     protein_fpath = Path(config.protein_fpathname)
     ligand_dpath = Path(config.ligand_dpathname)
 
-    protein_coords = _get_solute_coords(solute_fpath=protein_fpath)
+    protein_coords = _get_protein_coords(protein_fpath)
     x_range = np.array([0, min(protein_coords[:, 0]), max(protein_coords[:, 0])])
     y_range = np.array([1, min(protein_coords[:, 1]), max(protein_coords[:, 1])])
     z_range = np.array([2, min(protein_coords[:, 2]), max(protein_coords[:, 2])])
@@ -316,16 +316,14 @@ def setup_atm_dir(  # noqa: C901
 
 
 
-def _get_solute_coords(solute_fpath: Path):  # pdb or sdf file format
+def _get_solute_coords(solute_fpath: Path):  # sdf file format
     """
     Return N*3 array for solute coordinates
     """
-    assert solute_fpath.suffix in [".sdf", ".pdb"], f"{solute_fpath} is not supported."
-    if solute_fpath.suffix == ".sdf":
-        mol = Chem.SDMolSupplier(str(solute_fpath), removeHs=False)[0]
-    else:
-        mol = Chem.rdmolfiles.MolFromPDBFile(str(solute_fpath), removeHs=False)
+    assert solute_fpath.suffix == ".sdf", f"{solute_fpath} is not supported."
 
+    mol = Chem.SDMolSupplier(str(solute_fpath), removeHs=False)[0]
+    
     conf = mol.GetConformer()
     N_atoms = mol.GetNumAtoms()
     coords = np.zeros((N_atoms, 3))
@@ -333,6 +331,26 @@ def _get_solute_coords(solute_fpath: Path):  # pdb or sdf file format
         coords[row] = np.array(list(conf.GetAtomPosition(row)))
 
     return coords
+
+def _get_protein_coords(protein_pdb_fpath: Path):
+    """
+    Return N*3 array for protein coordinates
+    """
+    
+    pdb = PDBFile(str(protein_pdb_fpath))
+    positions = pdb.positions
+    ommtopology = pdb.topology
+    protein_coords =[]
+    for atom in ommtopology.atoms():
+        protein_coords.append([(positions[atom.index]/angstrom)[0],
+                       (positions[atom.index]/angstrom)[1],
+                       (positions[atom.index]/angstrom)[2]])
+        
+    coords = np.array(protein_coords)
+    print(f"protein coords: {coords}, type: {type(coords)}")
+    return coords
+    
+    
 
     
 def _ligset_coords(ligands_dir: Path) -> Dict:
