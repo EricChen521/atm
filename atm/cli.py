@@ -44,9 +44,6 @@ def run_atm(config_file):
 
     work_dpath = Path(config.work_dir).resolve()
 
-    with open(work_dpath / "ref.dat", "w") as fh:
-        fh.write(f"{config.ref_ligname} {config.ref_ligdG}\n")
-
     ligand_dpath = Path(config.ligand_dpathname).resolve()  
 
     if config.displ_vec:
@@ -74,18 +71,13 @@ def run_atm(config_file):
 
     # setup the `free_energy` dir
     setup_atm_dir(config=config)
-    alignment_result = get_alignment(config=config)
-
-    # reverse the displacemnet vector if this is abfe as
-    # the ligand was moved to edge already
-    if config.atm_type == "abfe":
-        config.displ_vec = (-displacement_vec).tolist()
-
+    if config.atm_type == 'rbfe':
+        with open(work_dpath / "ref.dat", "w") as fh:
+            fh.write(f"{config.ref_ligname} {config.ref_ligdG}\n")
+    
     if config.is_slurm:
         LOGGER.info(f"Use slurm system with nodes have at least {config.gres} GPUs")
         config.gpu_devices=[i for i in range(config.gres)]
-
-    config.write_to_yaml()
 
     complex_pdb_fpath = next(Path(f"{config.work_dir}/free_energy").iterdir())/"complex.pdb"
     print(f"sample protein for paring: {complex_pdb_fpath}")
@@ -93,8 +85,10 @@ def run_atm(config_file):
         complex_pdb_fpath=complex_pdb_fpath,
         relaxed_res_ids=config.relaxed_res_ids,
         vsite_radius=config.vsite_radius,
+        displ_vec=config.displ_vec if config.atm_type=="abfe" else [0,0,0],
         )
     
+    alignment_result = get_alignment(config=config)
     update_scripts(
         config=config, protein_info=protein_info, alignment_result=alignment_result
     )
@@ -113,6 +107,8 @@ def run_atm(config_file):
         LOGGER.info("ATM workflow is successfully submitted!")
     else:
         LOGGER.info("ATM workflow is successfully completed!")
+    
+    config.write_to_yaml()
 
 
 if __name__ == "__main__":

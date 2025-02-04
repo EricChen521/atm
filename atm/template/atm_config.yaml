@@ -1,4 +1,3 @@
-abfe_ligands: null
 atm_type: rbfe
 atom_build_pathname: ~/github/AToM-OpenMM
 atm_pythonpathname: ~/miniconda3/envs/atm-dev/bin/python
@@ -8,23 +7,23 @@ cofactor_fpathname: ./001.prep/cofactors/GDP/cofactor.sdf
 protein_fpathname: ./001.prep/proteins/KRAS/protein.pdb
 displ_vec: null
 disregard_ratio: 0.3
-dt: 0.002
+dt: 0.004
 exchange_interval: 20000
-forcefield_option: gaff2 # forcefield for ligands/cofactor, [gaff2, openff] 
+forcefield_option: openff 
 gres: 2  # the gres requested by atm job when on slurm
-gpu_devices: [0,1,2,3] # if not slurm, control which gpu to use
+gpu_devices: [0,1] # if not slurm, control which gpu to use
 kforce_displ: 2.5
 kforce_psi: 50.0
 kforce_theta: 50.0
-kforce_vsite: 0
+kforce_vsite: 25
 ligand_dpathname: ./001.prep/ligands
 morph_fpathname: null
-morph_type: star
+morph_type: star # only required in rbfe
 print_energy_interval: 20000
 print_traj_interval: 60000
-ref_alignidx: [35,4,16]
-ref_ligdG: 0.0
+ref_alignidx: [35,4,16] # only required in rbfe
+ref_ligdG: 0.0 # only required in rbfe
 ref_ligname: Compd-0044102
 sim_time: 2.0
-vsite_radius: 5.0
+vsite_radius: 6.0
 work_dir: .

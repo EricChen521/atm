@@ -324,6 +324,39 @@ def create_xml_from_amber(
         PDBFile.writeFile(prmtop.topology, inpcrd.positions, fh)
 
 
+def boundingBoxsizes(positions):
+    
+    xmin = positions[0][0]
+    xmax = positions[0][0]
+    ymin = positions[0][1]
+    ymax = positions[0][1]
+    zmin = positions[0][2]
+    zmax = positions[0][2]
+    for i in range(len(positions)):
+        x = positions[i][0]
+        y = positions[i][1]
+        z = positions[i][2]
+        # print('type of x ', type(x))
+        # print('Site ', i, ' Coord ', positions[i])
+        if(x > xmax):
+            xmax = x
+        if(x < xmin):
+            xmin = x
+        if(y > ymax):
+            ymax = y
+        if(y < ymin):
+            ymin = y
+        if(z > zmax):
+            zmax = z
+        if(z < zmin):
+            zmin = z
+            
+    box_range = [ (xmin,xmax), (ymin,ymax), (zmin,zmax) ] 
+    #print(f"box range: {box_range}")
+    return box_range
+    
+    
+
 def create_xml_from_openff(
     protein_fpath: Path,  # pdb format
     lig1_fpath: Path,  # sdf format
@@ -344,10 +377,11 @@ def create_xml_from_openff(
     ff = ForceField(protein_ff, solvent_ff)
 
     protein_pdb = PDBFile(str(protein_fpath))
-    protein_coords = protein_pdb.positions
+    protein_positions = protein_pdb.positions
     protein_mmtop = protein_pdb.topology
 
-    system = Modeller(protein_mmtop, protein_coords)
+    system = Modeller(protein_mmtop, protein_positions)
+    translated_system = Modeller(protein_mmtop, protein_positions)
 
     small_mols = []  # ligands and cofactors
     lig1_mol = Molecule.from_file(
@@ -356,12 +390,29 @@ def create_xml_from_openff(
     lig1_mmtop = lig1_mol.to_topology().to_openmm(ensure_unique_atom_names=True)
     # print(next(lig1_mmtop.residues()).name)
     next(lig1_mmtop.residues()).name = "L1"
+    nlig1 = lig1_mmtop.getNumAtoms()
     lig1_coords = lig1_mol.conformers[0].to("angstrom").magnitude
+    
     small_mols.append(lig1_mol)
+    
     # abfe
     if not lig2_fpath:
         translated_lig1_coords = lig1_coords + translation_vec
-        system.add(lig1_mmtop, translated_lig1_coords * angstrom)
+        translated_lig1_positions = [Vec3(translated_lig1_coords[i][0],
+                                          translated_lig1_coords[i][1],
+                                           translated_lig1_coords[i][2]) for i in range(nlig1)]*angstrom
+        
+        box = boundingBoxsizes(protein_positions + translated_lig1_positions)
+        boxsize = [box[i][1]-box[i][0] for i in range(3)]
+        padding = 2.0 * nanometer
+
+        abfe_Boxsize = Vec3((boxsize[0]+padding)/nanometer,
+                            (boxsize[1]+padding)/nanometer,
+                            (boxsize[2]+padding)/nanometer
+                            )*nanometer
+       
+        system.add(lig1_mmtop, lig1_coords * angstrom)
+        
 
     # rbfe
     else:
@@ -402,7 +453,7 @@ def create_xml_from_openff(
     # add solvent to full boxSize
     system.addSolvent(
         ff,
-        boxSize=boxSize,
+        boxSize=boxSize if lig2_fpath else abfe_Boxsize,
     )
 
     sys = ff.createSystem(

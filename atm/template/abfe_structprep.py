@@ -1,30 +1,33 @@
 from __future__ import print_function
 from __future__ import division
 import sys
+import os
 import time
-from pathlib import Path
+import math
+import random
 import logging
-
+import signal
+import shutil
 import random
 from sys import stdout
 sys.path.append("${atom_build_path}")
-import openmm as mm
-from openmm.app import *
-from openmm import *
-from openmm.unit import *
+
+from simtk import openmm as mm
+from simtk.openmm.app import *
+from simtk.openmm import *
+from simtk.unit import *
 from datetime import datetime
 
 import logging
 from configobj import ConfigObj
-from atmmetaforce import *
 from ommsystem import *
+from utils.AtomUtils import AtomUtils, residue_is_solvent
 
-
-class OMMSystemAmberABFEnoATM(OMMSystemAmberABFE):
+class OMMSystemABFEnoATM(OMMSystemABFE):
     def create_system(self):
 
-        self.load_amber_system()
-        self.atm_utils = ATMMetaForceUtils(self.system)
+        self.load_system()
+        self.atm_utils = AtomUtils(self.system)
         self.set_ligand_atoms()
         self.set_vsite_restraints()
         self.set_orientation_restraints()
@@ -41,29 +44,32 @@ class OMMSystemAmberABFEnoATM(OMMSystemAmberABFE):
 
         #self.set_torsion_metaDbias(self.temperature)
 
-        #do not include ATM Force. 
+        #do not include ATM Force, instead place the nonbonded forces
+        #in what it would be the the ATMForce group to setup the integrator
         #self.set_atmforce()
-        self.atmforcegroup = self.nonbondedforcegroup #for integrator
-        
+        self.atmforcegroup = self.free_force_group()
+        import re
+        nbpattern = re.compile(".*Nonbonded.*")
+        for i in range(self.system.getNumForces()):
+            if nbpattern.match(str(type(self.system.getForce(i)))):
+                nbforce = self.system.getForce(i)
+                nbforce.setForceGroup(self.atmforcegroup)
+                break
+        gbpattern = re.compile(".*GB.*")
+        for i in range(self.system.getNumForces()):
+            if gbpattern.match(self.system.getForce(i).getName()):
+                print("Adding GB implicit solvent force %s to non-bonded force group" % self.system.getForce(i).getName())
+                gbforce = self.system.getForce(i)
+                gbforce.setForceGroup(self.atmforcegroup)
+                break
+
         #add barostat
         pressure=1*bar
         self.set_barostat(self.temperature,pressure,25)
 
         self.set_integrator(self.temperature, self.frictionCoeff, self.MDstepsize)
 
-
-def do_mintherm(keywords, logger):
-    basename = keywords.get('BASENAME')
-    jobname = basename
-    
-    prmtopfile = basename + ".prmtop"
-    crdfile = basename + ".inpcrd"
-
-    #OpenMM system for minimization, thermalization, NPT, NVT
-    #does not include ATM Force
-    syst = OMMSystemAmberABFEnoATM(basename, keywords, prmtopfile, crdfile, logger)
-    syst.create_system()
-    
+def set_platform(keywords):
     platform_properties = {}
     platform_name = keywords.get("OPENMM_PLATFORM")
     if platform_name == None:
@@ -71,14 +77,34 @@ def do_mintherm(keywords, logger):
     if platform_name == "CUDA" or platform_name == "OpenCL" or platform_name == "HIP":
         platform_properties["DeviceIndex"] = '${device_index}'
         platform_properties["Precision"] = "mixed"
+    if platform_name == "CPU":
+        try:
+            nthreads = os.environ['OMP_NUM_THREADS']
+        except:
+            nthreads = 1
+        platform_properties["Threads"] = str(nthreads)
     platform = Platform.getPlatformByName(platform_name)
+    return (platform, platform_properties)
+
+def do_mintherm(keywords, logger):
+    basename = keywords.get('BASENAME')
+    jobname = basename
     
+    pdbtopfile = basename + ".pdb"
+    systemfile = basename + "_sys.xml"
+
+    #OpenMM system for minimization, thermalization, NPT, NVT
+    #does not include ATM Force
+    syst = OMMSystemABFEnoATM(basename, keywords, pdbtopfile, systemfile,  logger)
+    syst.create_system()
+
+    (platform, platform_properties) = set_platform(keywords)
     simulation = Simulation(syst.topology, syst.system, syst.integrator, platform, platform_properties)
     simulation.context.setPositions(syst.positions)
-    if syst.inpcrd.boxVectors is not None:
-        simulation.context.setPeriodicBoxVectors(*syst.inpcrd.boxVectors)
+    if syst.boxvectors is not None:
+        simulation.context.setPeriodicBoxVectors(syst.boxvectors[0], syst.boxvectors[1], syst.boxvectors[2] )
 
-    print (f"Using platform {simulation.context.getPlatform().getName()} on gpu: {platform_properties['DeviceIndex']}")
+    print ("Using platform %s" % simulation.context.getPlatform().getName())
         
     print("Potential energy before minimization =", simulation.context.getState(getEnergy = True).getPotentialEnergy())
     print("Energy minimizing the system ...")
@@ -100,7 +126,7 @@ def do_mintherm(keywords, logger):
     totalSteps = 150000
     steps_per_cycle = 5000
     number_of_cycles = int(totalSteps/steps_per_cycle)
-    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True, volume=True))    
+    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True, volume=True, speed=True))    
     
     # initial temperature
     initial_temp = keywords.get("INITIAL_TEMPERATURE")
@@ -112,7 +138,7 @@ def do_mintherm(keywords, logger):
     final_temperature = syst.temperature
     delta_temperature = (final_temperature - initial_temperature)/number_of_cycles
 
-    syst.barostat.setFrequency(999999999)#disabled
+    syst.barostat.setFrequency(0)#disabled
 
     #MD with temperature ramp
     temperature = initial_temperature
@@ -149,7 +175,7 @@ def do_mintherm(keywords, logger):
         PDBFile.writeFile(simulation.topology, positions, output)
 
     print("NVT equilibration ...")
-    syst.barostat.setFrequency(999999999)#disabled
+    syst.barostat.setFrequency(0)#disabled
 
     #MD at constant volume
     for i in range(number_of_cycles):
@@ -168,29 +194,21 @@ def do_lambda_annealing(keywords, logger):
     basename = keywords.get('BASENAME')
     jobname = basename
     
-    prmtopfile = basename + ".prmtop"
-    crdfile = basename + ".inpcrd"
+    pdbtopfile = basename + ".pdb"
+    systemfile = basename + "_sys.xml"
 
-    syst = OMMSystemAmberABFE(basename, keywords, prmtopfile, crdfile, logger)
+    syst = OMMSystemABFE(basename, keywords, pdbtopfile, systemfile, logger)
     syst.create_system()
-    
-    platform_properties = {}
-    platform_name = keywords.get("OPENMM_PLATFORM")
-    if platform_name == None:
-        platform_name = "CUDA"
-    if platform_name == "CUDA" or platform_name == "OpenCL" or platform_name == "HIP":
-        platform_properties["Precision"] = "mixed"
-        platform_properties["DeviceIndex"] = '${device_index}'
-    platform = Platform.getPlatformByName(platform_name)
-    
+
+    (platform, platform_properties) = set_platform(keywords)
     simulation = Simulation(syst.topology, syst.system, syst.integrator, platform, platform_properties)
     simulation.context.setPositions(syst.positions)
-    if syst.inpcrd.boxVectors is not None:
-        simulation.context.setPeriodicBoxVectors(*syst.inpcrd.boxVectors)
+    if syst.boxvectors is not None:
+        simulation.context.setPeriodicBoxVectors(syst.boxvectors[0], syst.boxvectors[1], syst.boxvectors[2] )
 
-    print (f"Using platform {simulation.context.getPlatform().getName()} on gpu: {platform_properties['DeviceIndex']}")
+    print ("Using platform %s" % simulation.context.getPlatform().getName())
     
-    syst.barostat.setFrequency(999999999)#disabled
+    syst.barostat.setFrequency(0)#disabled
 
     #target temperature
     temp = keywords.get("TEMPERATURES")
@@ -205,13 +223,14 @@ def do_lambda_annealing(keywords, logger):
     lambda1 = lmbd
     lambda2 = lmbd
     alpha = 0.0 / kilocalorie_per_mole
-    u0 = 0.0 * kilocalorie_per_mole
+    uh = 0.0 * kilocalorie_per_mole
     w0coeff = 0.0 * kilocalorie_per_mole
     umsc =  1000.0 * kilocalorie_per_mole
     ubcore = 500.0 * kilocalorie_per_mole
     acore = 0.062500
     direction = 1
-
+    uoffset = 0.0 * kilocalorie_per_mole
+    
     print( "LoadState ...")
     simulation.loadState(jobname + '_equil.xml')
 
@@ -219,20 +238,16 @@ def do_lambda_annealing(keywords, logger):
     simulation.context.setParameter(syst.atmforce.Lambda1(), lambda1)
     simulation.context.setParameter(syst.atmforce.Lambda2(), lambda2)
     simulation.context.setParameter(syst.atmforce.Alpha(), alpha *kilojoules_per_mole)
-    simulation.context.setParameter(syst.atmforce.U0(), u0 /kilojoules_per_mole)
+    simulation.context.setParameter(syst.atmforce.Uh(), uh /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.W0(), w0coeff /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Umax(), umsc /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Ubcore(), ubcore /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Acore(), acore)
     simulation.context.setParameter(syst.atmforce.Direction(), direction)
-    
-    if syst.doMetaD:
-        fgroups = {0,syst.metaDforcegroup,syst.atmforcegroup}
-    else:
-        fgroups = {0,syst.atmforcegroup}
+    simulation.context.setParameter('UOffset',  uoffset /kilojoules_per_mole)
 
-    state = simulation.context.getState(getEnergy = True, groups = fgroups)
-    #print("Potential Energy =", state.getPotentialEnergy())
+    epot = simulation.context.getState(getEnergy = True ).getPotentialEnergy()
+    print("Potential Energy =", simulation.context.getState(getEnergy = True ).getPotentialEnergy())
 
     print("Annealing to lambda = 1/2 ...")
 
@@ -241,26 +256,33 @@ def do_lambda_annealing(keywords, logger):
     steps_per_cycle = 5000
     number_of_cycles = int(totalSteps/steps_per_cycle)
     deltalambda = (0.5 - 0.0)/float(number_of_cycles)
-    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True))
-    simulation.reporters.append(DCDReporter(jobname + "_mdlambda.dcd", steps_per_cycle))
+    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True, speed=True))
+    if os.path.exists(jobname + "_mdlambda.xtc"):
+        os.remove(jobname + "_mdlambda.xtc")
+    simulation.reporters.append(XTCReporter(jobname + "_mdlambda.xtc", steps_per_cycle, enforcePeriodicBox=False))
 
-    state = simulation.context.getState(getEnergy = True, groups = fgroups)
-    print("Potential Energy =", state.getPotentialEnergy())
-    
     binding_file = jobname + '_mdlambda.out'
     f = open(binding_file, 'w')
     
     for i in range(number_of_cycles):
         simulation.step(steps_per_cycle)
-        state = simulation.context.getState(getEnergy = True, groups = fgroups)
-        pot_energy = (state.getPotentialEnergy()).value_in_unit(kilocalorie_per_mole)
-        pert_energy = (syst.atmforce.getPerturbationEnergy(simulation.context)).value_in_unit(kilocalorie_per_mole)
+        state = simulation.context.getState(getEnergy = True)
+        pot_energy = state.getPotentialEnergy()
+        (u1, u0, ebias) = syst.atmforce.getPerturbationEnergy(simulation.context)
+        umcore = simulation.context.getParameter(syst.atmforce.Umax())*kilojoules_per_mole
+        ubcore = simulation.context.getParameter(syst.atmforce.Ubcore())*kilojoules_per_mole
+        acore = simulation.context.getParameter(syst.atmforce.Acore())
+        direction = simulation.context.getParameter(syst.atmforce.Direction())
+        if direction > 0:
+            pert_energy = syst.atm_utils.softCorePertE(u1 - (u0+uoffset), umcore, ubcore, acore)
+        else:
+            pert_energy = syst.atm_utils.softCorePertE((u0+uoffset) - u1, umcore, ubcore, acore)
         l1 = simulation.context.getParameter(syst.atmforce.Lambda1())
         l2 = simulation.context.getParameter(syst.atmforce.Lambda2())
         a = simulation.context.getParameter(syst.atmforce.Alpha()) / kilojoules_per_mole
-        umid = simulation.context.getParameter(syst.atmforce.U0()) * kilojoules_per_mole
+        umid = simulation.context.getParameter(syst.atmforce.Uh()) * kilojoules_per_mole
         w0 = simulation.context.getParameter(syst.atmforce.W0()) * kilojoules_per_mole
-        print("%f %f %f %f %f %f %f %f %f" % (temperature/kelvin,lmbd, l1, l2, a*kilocalorie_per_mole, umid/kilocalorie_per_mole, w0/kilocalorie_per_mole, pot_energy, pert_energy), file=f )
+        print("%f %f %f %f %f %f %f %f %f" % (temperature/kelvin,lmbd, l1, l2, a*kilocalorie_per_mole, umid/kilocalorie_per_mole, w0/kilocalorie_per_mole, pot_energy/kilocalorie_per_mole, pert_energy/kilocalorie_per_mole), file=f )
         f.flush()
         lmbd += deltalambda
         lambda1 += deltalambda
@@ -283,30 +305,22 @@ def do_lambda_annealing(keywords, logger):
 def do_equil(keywords, logger):
     basename = keywords.get('BASENAME')
     jobname = basename
-    
-    prmtopfile = basename + ".prmtop"
-    crdfile = basename + ".inpcrd"
 
-    syst = OMMSystemAmberABFE(basename, keywords, prmtopfile, crdfile, logger)
+    pdbtopfile = basename + ".pdb"
+    systemfile = basename + "_sys.xml"
+
+    syst = OMMSystemABFE(basename, keywords, pdbtopfile, systemfile, logger)
     syst.create_system()
-    
-    platform_properties = {}
-    platform_name = keywords.get("OPENMM_PLATFORM")
-    if platform_name == None:
-        platform_name = "CUDA"
-    if platform_name == "CUDA" or platform_name == "OpenCL" or platform_name == "HIP":
-        platform_properties["Precision"] = "mixed"
-        platform_properties["DeviceIndex"] = '${device_index}'
-    platform = Platform.getPlatformByName(platform_name)
-    
+
+    (platform, platform_properties) = set_platform(keywords)
     simulation = Simulation(syst.topology, syst.system, syst.integrator, platform, platform_properties)
     simulation.context.setPositions(syst.positions)
-    if syst.inpcrd.boxVectors is not None:
-        simulation.context.setPeriodicBoxVectors(*syst.inpcrd.boxVectors)
+    if syst.boxvectors is not None:
+        simulation.context.setPeriodicBoxVectors(syst.boxvectors[0], syst.boxvectors[1], syst.boxvectors[2] )
 
-    print (f"Using platform {simulation.context.getPlatform().getName()} on gpu: {platform_properties['DeviceIndex']}")
+    print ("Using platform %s" % simulation.context.getPlatform().getName())
     
-    syst.barostat.setFrequency(999999999)#disabled
+    syst.barostat.setFrequency(0)#disabled
 
     #target temperature
     temp = keywords.get("TEMPERATURES")
@@ -321,13 +335,14 @@ def do_equil(keywords, logger):
     lambda1 = lmbd
     lambda2 = lmbd
     alpha = 0.0 / kilocalorie_per_mole
-    u0 = 0.0 * kilocalorie_per_mole
+    uh = 0.0 * kilocalorie_per_mole
     w0coeff = 0.0 * kilocalorie_per_mole
     umsc =  1000.0 * kilocalorie_per_mole
     ubcore = 500.0 * kilocalorie_per_mole
     acore = 0.062500
     direction = 1
-
+    uoffset = 0.0 * kilocalorie_per_mole
+    
     print( "LoadState ...")
     simulation.loadState(jobname + '_mdlambda.xml')
 
@@ -335,34 +350,29 @@ def do_equil(keywords, logger):
     simulation.context.setParameter(syst.atmforce.Lambda1(), lambda1)
     simulation.context.setParameter(syst.atmforce.Lambda2(), lambda2)
     simulation.context.setParameter(syst.atmforce.Alpha(), alpha *kilojoules_per_mole)
-    simulation.context.setParameter(syst.atmforce.U0(), u0 /kilojoules_per_mole)
+    simulation.context.setParameter(syst.atmforce.Uh(), uh /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.W0(), w0coeff /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Umax(), umsc /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Ubcore(), ubcore /kilojoules_per_mole)
     simulation.context.setParameter(syst.atmforce.Acore(), acore)
     simulation.context.setParameter(syst.atmforce.Direction(), direction)
+    simulation.context.setParameter('UOffset',  uoffset /kilojoules_per_mole)
     
-    if syst.doMetaD:
-        fgroups = {0,syst.metaDforcegroup,syst.atmforcegroup}
-    else:
-        fgroups = {0,syst.atmforcegroup}
-
-    state = simulation.context.getState(getEnergy = True, groups = fgroups)
-    #print("Potential Energy =", state.getPotentialEnergy())
+    epot = simulation.context.getState(getEnergy = True ).getPotentialEnergy()
+    print("Potential Energy =", simulation.context.getState(getEnergy = True ).getPotentialEnergy())
 
     print("Equilibration at lambda = 1/2 ...")
 
     #FIX ME: get from keywords
     totalSteps = 150000
     steps_per_cycle = 5000
-    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True))
-    simulation.reporters.append(DCDReporter(jobname + "_0.dcd", steps_per_cycle))
+    simulation.reporters.append(StateDataReporter(stdout, steps_per_cycle, step=True, potentialEnergy = True, temperature=True, speed=True))
+    if os.path.exists(jobname + "_0.xtc"):
+        os.remove(jobname + "_0.xtc")
+    simulation.reporters.append(XTCReporter(jobname + "_0.xtc", steps_per_cycle, enforcePeriodicBox=False))
 
-    state = simulation.context.getState(getEnergy = True, groups = fgroups)
-    print("Potential Energy =", state.getPotentialEnergy())
-    
     simulation.step(totalSteps)
-        
+    
     print( "SaveState ...")
     simulation.saveState(jobname + "_0.xml")
 
@@ -378,10 +388,17 @@ def massage_keywords(keywords, restrain_solutes = True):
     #use 1 fs time step
     keywords['TIME_STEP'] = 0.001
 
-    #restrain all solutes: receptor and ligands
-    nlig = len(keywords.get('LIGAND_ATOMS'))
-    last_lig_atom = int(keywords.get('LIGAND_ATOMS')[nlig-1])
-    keywords['POS_RESTRAINED_ATOMS'] = [i for i in range(last_lig_atom+1)]
+    #temporarily restrain all non-solvent atoms
+    if restrain_solutes:
+        basename = keywords.get('BASENAME')
+        pdbtopfile = basename + ".pdb"
+        pdb = PDBFile(pdbtopfile)
+        non_ion_wat_atoms = []
+        for res in pdb.topology.residues():
+            if not residue_is_solvent(res):
+                for atom in res.atoms():
+                    non_ion_wat_atoms.append(atom.index)
+        keywords['POS_RESTRAINED_ATOMS'] = non_ion_wat_atoms
 
 if __name__ == '__main__':
 
@@ -403,23 +420,19 @@ if __name__ == '__main__':
     print("Input file:", commandFile)
     print("")
     sys.stdout.flush()
-    
+
     keywords = ConfigObj(commandFile)
-    logger = logging.getLogger("rbfe_structprep")
+    logger = logging.getLogger("abfe_structprep")
 
     restrain_solutes = True
     old_keywords = keywords.copy()
     massage_keywords(keywords, restrain_solutes)
-    basename = keywords.get("BASENAME")
-    if not Path(f"./{basename}_equil.xml").is_file():
-        do_mintherm(keywords, logger)
-
-    if not Path(f"./{basename}_mdlambda.xml").is_file():
-        do_lambda_annealing(keywords, logger)
+    
+    do_mintherm(keywords, logger)
+    do_lambda_annealing(keywords, logger)
 
     #reestablish the restrained atoms
     if restrain_solutes:
         keywords['POS_RESTRAINED_ATOMS'] = old_keywords.get('POS_RESTRAINED_ATOMS') 
 
-    if not Path(f"./{basename}_0.xml").is_file():
-        do_equil(keywords, logger)
+    do_equil(keywords, logger)

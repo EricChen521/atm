@@ -53,7 +53,7 @@ def calc_displ_vec(
     y_range = np.array([1, min(protein_coords[:, 1]), max(protein_coords[:, 1])])
     z_range = np.array([2, min(protein_coords[:, 2]), max(protein_coords[:, 2])])
 
-    # print(f"system size: X {x_range}, Y {y_range}, Z {z_range}")
+    #print(f"system size: X {x_range}, Y {y_range}, Z {z_range}")
 
     small_area_center = np.array([0.0, 0.0, 0.0])
 
@@ -73,9 +73,13 @@ def calc_displ_vec(
         ligands_dir=ligand_dpath,
     )
 
-    ligands_coords = np.zeros((1, 3), dtype=float)
+    ligands_coords = np.empty((1, 3), dtype=float)
+
     for _k, v in ligandset_coords.items():
         ligands_coords = np.concatenate((ligands_coords, v), axis=0)
+     
+    #print(ligands_coords)
+    ligands_coords=np.array(ligands_coords).reshape((len(ligands_coords),3))
 
     sorted_u_index = ligands_coords[:, u].argsort()
     sorted_u_coords = ligands_coords[sorted_u_index]
@@ -84,7 +88,9 @@ def calc_displ_vec(
 
     displ_vec = np.round((small_area_center - distant_lig_atom_coords), 2)
     print(f"displacemnet vector: {displ_vec}")
+   
     return displ_vec
+
 
 
 def _rename_ligname(source_fmol2: Path, dst_fmol2: Path, new_name: str) -> None:
@@ -194,6 +200,7 @@ def setup_atm_dir(  # noqa: C901
                                 amber_crd_fapth=Path("complex.inpcrd"),
                                 xml_out_fpath=Path("complex_sys.xml"),
                                 pdb_out_fpath=Path("complex.pdb"),
+                                is_hmr=True if config.dt == 0.04 else False,
                             )
 
                         elif config.forcefield_option == "openff":
@@ -212,14 +219,26 @@ def setup_atm_dir(  # noqa: C901
                                     )
 
             elif config.atm_type == "abfe":
-                ligand_names = config.abfe_ligands or [
+                ligand_names = [
                     e.name for e in ligand_dpath.iterdir() if e.is_dir()
                 ]
                 for ligand_name in ligand_names:
                     Path(ligand_name).mkdir(parents=True, exist_ok=True)
                     with tmp_cd(ligand_name):
 
-                        if config.forcefield_option in ["gaff"]:
+                        if config.forcefield_option in ["gaff2"]:
+                            forcefield_dpath = Path(config.forcefield_dpathname)
+                            lig_fpath = forcefield_dpath / ligand_name / "vacuum.mol2"
+                            lig_renamed_fpath = (
+                                forcefield_dpath / ligand_name / f"L1.mol2"
+                            )
+                            lig_renamed_fpath.is_file() or _rename_ligname(
+                                lig_fpath, lig_renamed_fpath, f"L1"
+                            )
+                            shutil.copyfile(
+                                lig_fpath.parent / "vacuum.frcmod",
+                                lig_fpath.parent / f"L1.frcmod",
+                            )
 
                             create_amber_system(
                                 output_top_path="complex.prmtop",
@@ -227,13 +246,13 @@ def setup_atm_dir(  # noqa: C901
                                 buffer_size=10,
                                 solute_paths=[
                                     protein_fpath,
-                                    forcefield_dpath / ligand_name / "vacuum.mol2",
+                                    forcefield_dpath / ligand_name / "L1.mol2",
                                     cofactor_fpath.parent / "cofactor.mol2",
                                 ]
                                 if cofactor_fpath
                                 else [
                                     protein_fpath,
-                                    forcefield_dpath / ligand_name / "vacuum.mol2",
+                                    forcefield_dpath / ligand_name / "L1.mol2",
                                 ],
                                 # Translate the ligand to solvent
                                 # pass the negative translation_vec to downstream
@@ -242,24 +261,26 @@ def setup_atm_dir(  # noqa: C901
                             create_xml_from_amber(
                                 amber_top_fpath=Path("complex.prmtop"),
                                 amber_crd_fapth=Path("complex.inpcrd"),
-                                xml_out_fpath=Path("complex.xml"),
+                                xml_out_fpath=Path("complex_sys.xml"),
                                 pdb_out_fpath=Path("complex.pdb"),
+                                is_hmr = True if config.dt == 0.04 else False,
                             )
                         elif config.forcefield_option in ["openff"]:
+                            if not Path("complex_sys.xml").is_file():
 
-                            create_xml_from_openff(
-                                protein_fpath=protein_fpath,
-                                lig1_fpath=ligand_dpath
-                                / ligand_name
-                                / "ligand.sdf",
-                                translation_vec=translation_vec,
-                                xml_out_fpath="./complex.xml",
-                                pdb_out_fpath="./complex.pdb",
-                                cofactor_fpath=cofactor_fpath
-                                if cofactor_fpath
-                                else None,
-                                is_hmass=True if config.dt == 0.004 else False,
-                            )
+                                create_xml_from_openff(
+                                    protein_fpath=protein_fpath,
+                                    lig1_fpath=ligand_dpath
+                                    / ligand_name
+                                    / "ligand.sdf",
+                                    translation_vec=translation_vec,
+                                    xml_out_fpath="./complex_sys.xml",
+                                    pdb_out_fpath="./complex.pdb",
+                                    cofactor_fpath=cofactor_fpath
+                                    if cofactor_fpath
+                                    else None,
+                                    is_hmass=True if config.dt == 0.004 else False,
+                                )
             if parameters:
 
                 cpu_number = multiprocessing.cpu_count()
@@ -329,7 +350,9 @@ def _ligset_coords(ligands_dir: Path) -> Dict:
 
 def parse_protein(complex_pdb_fpath: Path= None,
                   relaxed_res_ids: List[int]=None ,
-                  vsite_radius: float = 5.0) -> Dict:
+                  vsite_radius: float = 6.0,
+                  #in abfe, L1 needs to transfer back to get the viste residues
+                  displ_vec: List[float]=[0,0,0]) -> Dict:
     
     """
         Parse the complex.pdb to return:
@@ -337,6 +360,7 @@ def parse_protein(complex_pdb_fpath: Path= None,
             "restrianed_CA_ids": the CA atom index to be restrianed in alchemical MD
             "vsite_CA_ids": The CA atom index in vsite
             "N_atom": The first atom index of L1
+            "ligoffset": The vector from ligand 1 center to vsite center
     
     """
     # get the first ligand coordinate
@@ -344,11 +368,13 @@ def parse_protein(complex_pdb_fpath: Path= None,
     pdb = PDBFile(str(complex_pdb_fpath))
     positions = pdb.positions
     ommtopology = pdb.topology
-    print(f"relaxed_res_ids: {relaxed_res_ids}, type: {type(relaxed_res_ids[0])}")
+    if relaxed_res_ids:
+        print(f"relaxed_res_ids: {relaxed_res_ids}")
     
 
     CA_ids = []
     CA_positions = []
+    vsite_positions =[]
     vsite_CA_ids = []
     L1_ids =[]
     L1_positions =[]
@@ -379,13 +405,27 @@ def parse_protein(complex_pdb_fpath: Path= None,
     for i in range(len(CA_ids)):
         CA_coords = np.array(CA_positions[i]).reshape((1,3))
         min_distance = np.amin(distance_matrix(CA_coords,L1_coords))
+        #print(min_distance)
         
         if min_distance <= vsite_radius:
             vsite_CA_ids.append(i)
- 
+            vsite_positions.append(CA_positions[i])
+    
+    vsite_coords = np.array(vsite_positions)
+    
+    dx = round(np.mean(L1_coords[:,0]) - np.mean(vsite_coords[:,0]),2)
+    dy = round(np.mean(L1_coords[:,1]) - np.mean(vsite_coords[:,1]),2)
+    dz = round(np.mean(L1_coords[:,2]) - np.mean(vsite_coords[:,2]),2)
+    
+    
+    ligoffset = [dx,dy,dz]
+    
+    print(f"ligoffset vector: {ligoffset}")
+    
     restrained_CA_ids=sorted(list(set(CA_ids) - set(relax_CA_ids)))
     print(f"relax CA ids: {relax_CA_ids}")       
-    result = {"CA_ids": CA_ids,"restrained_CA_ids": restrained_CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": L1_ids[0]}
+    result = {"CA_ids": CA_ids,"restrained_CA_ids": restrained_CA_ids, "vsite_CA_ids": vsite_CA_ids, "N_atoms": L1_ids[0],
+                    "ligoffset": ligoffset}
 
     return result
 
@@ -397,32 +437,48 @@ def get_alignment(config: AtmConfig) -> Dict:
 
     result = {}
     ligands_coords = _ligset_coords(ligands_dir=Path(config.ligand_dpathname))
-    LOGGER.info(f"all ligand names: {ligands_coords.keys()}, ref ligand name: {config.ref_ligname}.")
-    ref_lig_coords = ligands_coords[str(config.ref_ligname)]
-    ref_lig_N_atoms = ref_lig_coords.shape[0]
-    result.update(
-        {
-            config.ref_ligname: {
-                "align_atom_ids": config.ref_alignidx,
-                "N_atoms": ref_lig_N_atoms,
+    
+    if config.atm_type == "rbfe":
+        LOGGER.info(f"all ligand names: {ligands_coords.keys()}, ref ligand name: {config.ref_ligname}.")
+        ref_lig_coords = ligands_coords[str(config.ref_ligname)]
+        ref_lig_N_atoms = ref_lig_coords.shape[0]
+        result.update(
+            {
+                config.ref_ligname: {
+                    "align_atom_ids": config.ref_alignidx,
+                    "N_atoms": ref_lig_N_atoms,
+                }
             }
-        }
-    )
+        )
 
-    for lig_name, lig_coords in ligands_coords.items():
-        if lig_name != config.ref_ligname:
-            dist_matrix = cdist(ref_lig_coords, lig_coords)
-            nearest_ids = np.argmin(dist_matrix, axis=1)
-            # the ref_align_idx starts from 1, be careful about the index
-            lig_aligment_ids = [nearest_ids[i - 1] + 1 for i in config.ref_alignidx]
+        for lig_name, lig_coords in ligands_coords.items():
+            if lig_name != config.ref_ligname:
+                dist_matrix = cdist(ref_lig_coords, lig_coords)
+                nearest_ids = np.argmin(dist_matrix, axis=1)
+                # the ref_align_idx starts from 1, be careful about the index
+                lig_aligment_ids = [nearest_ids[i - 1] + 1 for i in config.ref_alignidx]
+                result.update(
+                    {
+                        lig_name: {
+                            "align_atom_ids": lig_aligment_ids,
+                            "N_atoms": lig_coords.shape[0],
+                        }
+                    }
+                )
+    if config.atm_type == "abfe":
+        
+        for lig_name, lig_coords in ligands_coords.items():
             result.update(
-                {
-                    lig_name: {
-                        "align_atom_ids": lig_aligment_ids,
+                {lig_name:
+                    {
+                        "align_atoms_ids": [1,2,3], # not used in abfe 
                         "N_atoms": lig_coords.shape[0],
                     }
                 }
             )
+        
+        
+        
     return result
 
 
@@ -520,7 +576,10 @@ def update_scripts(
                         open(template_dir() / "atom_abfe_template.cntl", "r").read()
                     ).substitute(
                         work_dir=str(free_energy_dpath / perturbation_dirname),
-                        displ=",".join(map(str, config.displ_vec)),
+                        ligoffset=",".join(map(str,protein_info["ligoffset"])),
+                        # abfe with gaff2, ligand already in the solvent, use the oppsite displacemnet to go back to binding site
+                        # abfe with openff, ligand is in the binding site, use the normal displacement to go to solvent
+                        displ=",".join(map(str, [-i for i in config.displ_vec] if config.forcefield_option =="gaff2" else config.displ_vec)),
                         lig_atoms=",".join(map(str, lig_atom_ids)),
                         rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
                         restrained_atoms=",".join(map(str, restrained_CA_ids)),
@@ -603,7 +662,7 @@ def submit_job(is_slurm: bool, free_energy_dpath: Path) -> None:
             )
             jobs.update({perturbation_dir: job})
 
-    LOGGER.info("Running ATM calculation...")
+    LOGGER.info(f"Running ATM calculation...")
     for pertub_dir, procs in jobs.items():
         stdout, stderr = procs.communicate()
      

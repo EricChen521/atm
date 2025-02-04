@@ -36,4 +36,6 @@ do
 	fi
 done
 cd ..
-python $DIFFNET_SCRIPT --atm-dat atm_results.dat --ref-file ref.dat --result-dir . --new-csv 
+if [[ $name1 != $name2 ]]; then
+	python $DIFFNET_SCRIPT --atm-dat atm_results.dat --ref-file ref.dat --result-dir . --new-csv 
+fi
