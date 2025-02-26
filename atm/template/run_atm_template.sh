@@ -20,12 +20,21 @@ if [ ! -f $work_dir/complex_0.xml ]; then
 
 fi
 
+if [ -f $work_dir/nodefile ]; then
+   rm $work_dir/nodefile
+fi
+
 if [ $gpu_num_per_pair -eq 1 ]
 then
    echo -e "localhost,0:${device_index},1,CUDA,,/tmp" > $work_dir/nodefile
-else
 
-   echo -e "localhost,0:0,1,CUDA,,/tmp\nlocalhost,0:1,1,CUDA,,/tmp\nlocalhost,0:2,1,CUDA,,/tmp\nlocalhost,0:3,1,CUDA,,/tmp\nlocalhost,0:4,1,CUDA,,/tmp"  > $work_dir/nodefile
+else
+   i=0
+   while [ $dollar_i -lt $gpu_num_per_pair ]
+   do
+      echo -e "localhost,0:$dollar_i,1,CUDA,,/tmp"  >> $work_dir/nodefile
+      i=$dollar((i + 1 ))
+   done
 fi
 
 ${atm_pythonpath} $atom_build_path/${fep_type}_explicit.py atom_${fep_type}.cntl || exit

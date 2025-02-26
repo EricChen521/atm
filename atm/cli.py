@@ -25,10 +25,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 @click.command()
-@click.option("-c", "--config", "config_file", help="Configuration yaml file for ATM.")
-def run_atm(config_file):
+@click.option("-c", "config_file", help="Configuration yaml file for ATM.")
+@click.option("-get_config",is_flag=True,default=False, help="Get a config template" )
+def run_atm(config_file, get_config):
     """Run ATM  workflow based on the yaml parameter file."""
     config = AtmConfig()
+    if get_config:
+        config.write_to_yaml()
+        print("Only write the up-to-date atm configture file.")
+        return 0
+        
     config.update_param(Path(config_file).resolve())
     check_atm_input(config)
 
@@ -83,9 +89,7 @@ def run_atm(config_file):
     print(f"sample protein for paring: {complex_pdb_fpath}")
     protein_info = parse_protein(
         complex_pdb_fpath=complex_pdb_fpath,
-        relaxed_res_ids=config.relaxed_res_ids,
-        vsite_radius=config.vsite_radius,
-        displ_vec=config.displ_vec if config.atm_type=="abfe" else [0,0,0],
+        config=config,
         )
     
     alignment_result = get_alignment(config=config)

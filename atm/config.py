@@ -26,12 +26,13 @@ class AtmConfig:
     atm_type: str = "abfe"  # 'abfe', 'rbfe'
     morph_fpathname: str = None  # 'Morph.in' file that has pairname(ligA~ligB) for rbfe
     morph_type: str = None  # 'star' or 'lomap', to generate Morph.in when not provided
-    relaxed_res_ids: List[int] = None # # the residue id without positional restraint. such as [58,59,60](index based on pdb file)
-    vsite_radius: float = 5.0  # unit in Å to define viste
+    relaxed_res_ids: List[int] = None # the residue id without positional restraint. such as [58,59,60](index based on pdb file)
+    vsite_radius: float = 3.0  # unit in Å to define viste
+    vsite_res_ids: List[int] = None # the vsite resiude ids of the input receptor
     ref_ligname: str = None  # reference ligand name
     ref_alignidx: List[
         int
-    ] = None  # three atom indexes for alignment, index starts from 1.
+    ] = None  # three atom indexes for alignment, index starts from 1, use the ligand center as first atom.
     ref_ligdG: float = 0.0  # reference ligand exp dG.
     kforce_vsite: float = 25.0
     kforce_displ: float = 2.5
@@ -47,7 +48,7 @@ class AtmConfig:
     gpu_devices: List[int] = None  # available gpu device indexes
     gres: int = 4 # the GPU number of th node requested by atm job
     work_dir: str = "."  # atm workflow work dir
-    is_slurm: bool = False # True if run on slurm cluster
+    is_slurm: bool = True # True if run on slurm cluster
     partition: str = None # the partition of cluster to run atm
 
     # def get(self,name:str)

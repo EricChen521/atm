@@ -381,9 +381,22 @@ def create_xml_from_openff(
     protein_mmtop = protein_pdb.topology
 
     system = Modeller(protein_mmtop, protein_positions)
-    translated_system = Modeller(protein_mmtop, protein_positions)
-
-    small_mols = []  # ligands and cofactors
+    
+    small_mols = []  # ligands and cofactor if any
+    # add cofator if exists
+    if cofactor_fpath:
+        cofactor_mol = Molecule.from_file(
+            str(cofactor_fpath), file_format="SDF", allow_undefined_stereo=True
+        )
+        small_mols.append(cofactor_mol)
+        cofactor_mmtop = cofactor_mol.to_topology().to_openmm(
+            ensure_unique_atom_names=True
+        )
+        next(cofactor_mmtop.residues()).name = "COF"
+        cofactor_coords = cofactor_mol.conformers[0].to("angstrom").magnitude
+        system.add(cofactor_mmtop, cofactor_coords * angstrom)
+    
+    
     lig1_mol = Molecule.from_file(
         str(lig1_fpath), file_format="SDF", allow_undefined_stereo=True
     )
@@ -427,17 +440,7 @@ def create_xml_from_openff(
         translated_lig2_coords = lig2_coords + translation_vec
         system.add(lig2_mmtop, translated_lig2_coords * angstrom)
 
-    # add cofator if exists
-    if cofactor_fpath:
-        cofactor_mol = Molecule.from_file(
-            str(cofactor_fpath), file_format="SDF", allow_undefined_stereo=True
-        )
-        small_mols.append(cofactor_mol)
-        cofactor_mmtop = cofactor_mol.to_topology().to_openmm(
-            ensure_unique_atom_names=True
-        )
-        cofactor_coords = cofactor_mol.conformers[0].to("angstrom").magnitude
-        system.add(cofactor_mmtop, cofactor_coords * angstrom)
+    
 
     
     smirnoff = SMIRNOFFTemplateGenerator(molecules=small_mols, forcefield=ligand_ff)

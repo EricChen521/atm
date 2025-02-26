@@ -13,9 +13,9 @@ forcefield_option: openff
 gres: 2  # the gres requested by atm job when on slurm
 gpu_devices: [0,1] # if not slurm, control which gpu to use
 kforce_displ: 2.5
-kforce_psi: 50.0
-kforce_theta: 50.0
-kforce_vsite: 25
+kforce_psi: 25.0
+kforce_theta: 25.0
+kforce_vsite: 25.0
 ligand_dpathname: ./001.prep/ligands
 morph_fpathname: null
 morph_type: star # only required in rbfe

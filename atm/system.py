@@ -347,7 +347,7 @@ def _get_protein_coords(protein_pdb_fpath: Path):
                        (positions[atom.index]/angstrom)[2]])
         
     coords = np.array(protein_coords)
-    print(f"protein coords: {coords}, type: {type(coords)}")
+    #print(f"protein coords: {coords}, type: {type(coords)}")
     return coords
     
     
@@ -367,10 +367,7 @@ def _ligset_coords(ligands_dir: Path) -> Dict:
 
 
 def parse_protein(complex_pdb_fpath: Path= None,
-                  relaxed_res_ids: List[int]=None ,
-                  vsite_radius: float = 6.0,
-                  #in abfe, L1 needs to transfer back to get the viste residues
-                  displ_vec: List[float]=[0,0,0]) -> Dict:
+                  config: AtmConfig = None):  
     
     """
         Parse the complex.pdb to return:
@@ -386,8 +383,8 @@ def parse_protein(complex_pdb_fpath: Path= None,
     pdb = PDBFile(str(complex_pdb_fpath))
     positions = pdb.positions
     ommtopology = pdb.topology
-    if relaxed_res_ids:
-        print(f"relaxed_res_ids: {relaxed_res_ids}")
+    if config.relaxed_res_ids:
+        print(f"relaxed_res_ids: {config.relaxed_res_ids}")
     
 
     CA_ids = []
@@ -401,40 +398,32 @@ def parse_protein(complex_pdb_fpath: Path= None,
 
     # Get the atom index for 'L1' ligand
     for atom in ommtopology.atoms():
+        atom_position = [(positions[atom.index]/angstrom)[0],
+                            (positions[atom.index]/angstrom)[1],
+                            (positions[atom.index]/angstrom)[2]]
         if atom.residue.name == "L1":
             L1_ids.append(atom.index)
             
-            L1_positions.append([(positions[atom.index]/angstrom)[0],
-                                 (positions[atom.index]/angstrom)[1],
-                                (positions[atom.index]/angstrom)[2]])
-            
-            
+            L1_positions.append(atom_position)
+        
         elif atom.name == "CA":
             CA_ids.append(atom.index)
-            CA_positions.append([(positions[atom.index]/angstrom)[0],
-                                 (positions[atom.index]/angstrom)[1],
-                                 (positions[atom.index]/angstrom)[2]])
+            CA_positions.append([atom_position])
             
-            if relaxed_res_ids:
-                if int(atom.residue.id) in relaxed_res_ids:
+            if config.relaxed_res_ids:
+                if int(atom.residue.id) in config.relaxed_res_ids:
                     relax_CA_ids.append(atom.index)
-          
-    L1_coords = np.array(L1_positions)  
-    for i in range(len(CA_ids)):
-        CA_coords = np.array(CA_positions[i]).reshape((1,3))
-        min_distance = np.amin(distance_matrix(CA_coords,L1_coords))
-        #print(min_distance)
-        
-        if min_distance <= vsite_radius:
-            vsite_CA_ids.append(i)
-            vsite_positions.append(CA_positions[i])
-    
+            
+            if int(atom.residue.id) in config.vsite_res_ids:
+                vsite_CA_ids.append(atom.index) 
+                vsite_positions.append(atom_position)
+                 
+    #L1_coords = np.array(L1_positions)  
+    L1_CM_coords = L1_positions[config.ref_alignidx[0]-1]
     vsite_coords = np.array(vsite_positions)
-    
-    dx = round(np.mean(L1_coords[:,0]) - np.mean(vsite_coords[:,0]),2)
-    dy = round(np.mean(L1_coords[:,1]) - np.mean(vsite_coords[:,1]),2)
-    dz = round(np.mean(L1_coords[:,2]) - np.mean(vsite_coords[:,2]),2)
-    
+    dx = round(L1_CM_coords[0] - np.mean(vsite_coords[:,0]),2)
+    dy = round(L1_CM_coords[1] - np.mean(vsite_coords[:,1]),2)
+    dz = round(L1_CM_coords[2] - np.mean(vsite_coords[:,2]),2)
     
     ligoffset = [dx,dy,dz]
     
@@ -456,46 +445,33 @@ def get_alignment(config: AtmConfig) -> Dict:
     result = {}
     ligands_coords = _ligset_coords(ligands_dir=Path(config.ligand_dpathname))
     
-    if config.atm_type == "rbfe":
-        LOGGER.info(f"all ligand names: {ligands_coords.keys()}, ref ligand name: {config.ref_ligname}.")
-        ref_lig_coords = ligands_coords[str(config.ref_ligname)]
-        ref_lig_N_atoms = ref_lig_coords.shape[0]
-        result.update(
-            {
-                config.ref_ligname: {
-                    "align_atom_ids": config.ref_alignidx,
-                    "N_atoms": ref_lig_N_atoms,
-                }
+    LOGGER.info(f"all ligand names: {ligands_coords.keys()}, ref ligand name: {config.ref_ligname}.")
+    ref_lig_coords = ligands_coords[str(config.ref_ligname)]
+    ref_lig_N_atoms = ref_lig_coords.shape[0]
+    result.update(
+        {
+            config.ref_ligname: {
+                "align_atom_ids": config.ref_alignidx,
+                "N_atoms": ref_lig_N_atoms,
             }
-        )
+        }
+    )
 
-        for lig_name, lig_coords in ligands_coords.items():
-            if lig_name != config.ref_ligname:
-                dist_matrix = cdist(ref_lig_coords, lig_coords)
-                nearest_ids = np.argmin(dist_matrix, axis=1)
-                # the ref_align_idx starts from 1, be careful about the index
-                lig_aligment_ids = [nearest_ids[i - 1] + 1 for i in config.ref_alignidx]
-                result.update(
-                    {
-                        lig_name: {
-                            "align_atom_ids": lig_aligment_ids,
-                            "N_atoms": lig_coords.shape[0],
-                        }
-                    }
-                )
-    if config.atm_type == "abfe":
-        
-        for lig_name, lig_coords in ligands_coords.items():
+    for lig_name, lig_coords in ligands_coords.items():
+        if lig_name != config.ref_ligname:
+            dist_matrix = cdist(ref_lig_coords, lig_coords)
+            nearest_ids = np.argmin(dist_matrix, axis=1)
+            # the ref_align_idx starts from 1, be careful about the index
+            lig_aligment_ids = [nearest_ids[i - 1] + 1 for i in config.ref_alignidx]
             result.update(
-                {lig_name:
-                    {
-                        "align_atoms_ids": [1,2,3], # not used in abfe 
+                {
+                    lig_name: {
+                        "align_atom_ids": lig_aligment_ids,
                         "N_atoms": lig_coords.shape[0],
                     }
                 }
             )
-        
-        
+
         
     return result
 
@@ -573,7 +549,9 @@ def update_scripts(
                 fep_type=config.atm_type,
                 partition=config.partition,
                 gres=config.gres,
-                gpu_num_per_pair=1,
+                gpu_num_per_pair=config.gres if config.is_slurm else 1,
+                dollar='$',
+                dollar_i ='$i',
                 atom_build_path=config.atom_build_pathname,
                 atm_pythonpath = config.atm_pythonpathname,
                 device_index=config.gpu_devices[job_id % len(config.gpu_devices)],
@@ -599,6 +577,7 @@ def update_scripts(
                         # abfe with openff, ligand is in the binding site, use the normal displacement to go to solvent
                         displ=",".join(map(str, [-i for i in config.displ_vec] if config.forcefield_option =="gaff2" else config.displ_vec)),
                         lig_atoms=",".join(map(str, lig_atom_ids)),
+                        lig_cm_atoms=str(N_protein + alignment_result[perturbation_dirname]['align_atom_ids'][0]-1),
                         rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
                         restrained_atoms=",".join(map(str, restrained_CA_ids)),
                         max_sample_num=max_sample_num,
@@ -610,6 +589,8 @@ def update_scripts(
                         kforce_displ=config.kforce_displ,
                         kforce_theta=config.kforce_theta,
                         kforce_psi=config.kforce_psi,
+                        hmass=1.5 if config.dt == 0.004 else 1.0,
+                        dt=config.dt,
                     )
                     fh.write(atom_template)
 
@@ -639,11 +620,14 @@ def update_scripts(
                     ).substitute(
                         work_dir=str(free_energy_dpath / perturbation_dirname),
                         displ=",".join(map(str, config.displ_vec)),
+                        ligoffset=",".join(map(str,protein_info["ligoffset"])),
                         lig1_atoms=",".join(map(str, lig1_ids)),
                         lig2_atoms=",".join(map(str, lig2_ids)),
                         # local ligand index for alignment
                         refatoms_lig1=",".join(map(str, lig1_alignment_ids)),
                         refatoms_lig2=",".join(map(str, lig2_alignment_ids)),
+                        lig1_cm_atoms=str(lig1_ids[0] + lig1_alignment_ids[0]),
+                        lig2_cm_atoms=str(lig2_ids[0] +lig2_alignment_ids[0]),
                         rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
                         restrained_atoms=",".join(map(str, restrained_CA_ids)),
                         max_sample_num=max_sample_num,
@@ -655,6 +639,8 @@ def update_scripts(
                         kforce_displ=config.kforce_displ,
                         kforce_theta=config.kforce_theta,
                         kforce_psi=config.kforce_psi,
+                        hmass=1.5 if config.dt == 0.004 else 1.0,
+                        dt=config.dt,
                     )
                     fh.write(atom_template)
         job_id += 1
