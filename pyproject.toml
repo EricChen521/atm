@@ -64,7 +64,6 @@ importlib_metadata = {version = ">=4", python = "~3.10"}
 
 pyyaml = "*"
 rdkit = "*"
-biopython = "*"
 openmm = ">=8.1.1"
 openff-toolkit = ">=0.13"
 openmmforcefields = ">=0.8"

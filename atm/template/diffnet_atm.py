@@ -192,7 +192,7 @@ with open("atm.csv","w") as fh:
             "TI_binding_ddG,TI_binding_ddG_miderr,TI_binding_ddG_sem\n")
     id=0
     for line in open(args.atm_dat,"r").readlines()[1:]:
-        ligand1, ligand2, dG, error = line.strip().split(",")[:4]
+        ligand1, ligand2, dG, error = [i.strip() for i in line.strip().split(",")[:4]]
         fh.write(f"{id},{ligand1},{ligand2},{dG},{error},{error},{dG},{error},{error}\n")
         id+=1
 dfs.append(pd.read_csv("atm.csv",dtype="str",index_col=0))

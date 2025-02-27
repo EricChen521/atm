@@ -4,8 +4,8 @@ source ${atm_dev_env}
 UWHAT_SCRIPT=${uwhat_script_pathname}
 DIFFNET_SCRIPT=${diffnet_script_pathname}
 cd $free_energy_dir
-echo "name0,name1,ddG_convergence,error,start_frame,end_frame" >> ../ddG_convergence.dat
-echo "name0,name1,ddG_value,error,start_frame,end_frame" >> ../atm_results.dat
+echo "name0, name1, ddG_convergence, error, start_frame, end_frame" >> ../ddG_convergence.dat
+echo "name0, name1, ddG_value, error, start_frame, end_frame, MaxDGint, penaltyoverlap, penaltyintermediate" >> ../atm_results.dat
 for pair in *
 do
 	if [ -d $pair ]; then
@@ -23,6 +23,9 @@ do
 			R CMD BATCH -complex -$start_frame_index -$step_frame_index $UWHAT_SCRIPT
 			result=($(grep -r "^DDGb =" uwham_analysis.Rout))
 			ddG=$(echo ${result[2]} | xargs printf "%.2f")
+			maxdgint=$(echo ${result[9]} | xargs printf "%.2f")
+			penaltyoverlap=$(echo ${result[11]} | xargs printf "%.2f")
+			penaltyintermediate=$(echo ${result[13]} | xargs printf "%.2f")
 			ddGs+=($ddG)
 		done
 
@@ -30,8 +33,8 @@ do
 		end_frame=$(echo ${result[7]})
 		printf -v ddGs_str '>%s' "${ddGs[@]}"
 		ddGs_str=${ddGs_str:1} 
-		echo "$name1,$name2,$ddGs_str,$uncertanity,$start_frame_index,$end_frame" >> ../../ddG_convergence.dat
-		echo "$name1,$name2,$ddG,$uncertanity,$start_frame_index,$end_frame" >> ../../atm_results.dat
+		echo "$name1, $name2, $ddGs_str, $uncertanity, $start_frame_index, $end_frame" >> ../../ddG_convergence.dat
+		echo "$name1, $name2, $ddG, $uncertanity, $start_frame_index, $end_frame $maxdgint, $penaltyoverlap, $penaltyintermediate" >> ../../atm_results.dat
 		cd ..
 	fi
 done
