@@ -538,5 +538,5 @@ def check_atm_input(config):
     assert Path(config.ligand_dpathname).is_dir(), "not ligand dir found"
     assert Path(config.protein_fpathname).is_file(),"no protein file found"
     
-    if Path(config.cofactor_fpathname).is_file():
+    if config.cofactor_fpathname and Path(config.cofactor_fpathname).is_file():
         assert Path(config.cofactor_fpathname).name == "cofactor.sdf", "you have to put cofactor as '[name]/cofactor.sdf'"
