@@ -557,6 +557,25 @@ def update_scripts(
                 device_index=config.gpu_devices[job_id % len(config.gpu_devices)],
             )
             fh.write(str(run_atm_template))
+        
+        # write pml for trajectory visulization
+        
+        with open(free_energy_dpath/perturbation_dirname/"vis_mdlambda.pml","w") as fh:
+            vis_template = Template(
+                open(template_dir()/"vis_template.pml","r").read()
+            ).substitute(
+                traj="complex_mdlambda.xtc",
+                reversed_displ=f"[{-config.displ_vec[0]},{-config.displ_vec[1]},{-config.displ_vec[2]}]"
+            )
+            fh.write(vis_template)
+        with open(free_energy_dpath/perturbation_dirname/"vis_r0.pml","w") as fh:
+            vis_template = Template(
+                open(template_dir()/"vis_template.pml","r").read()
+            ).substitute(
+                traj="r0/complex.xtc",
+                reversed_displ=f"[{-config.displ_vec[0]},{-config.displ_vec[1]},{-config.displ_vec[2]}]"
+            )
+            fh.write(vis_template)
 
             if config.atm_type == "abfe":
                 lig_atom_ids = list(
