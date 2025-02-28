@@ -34,7 +34,7 @@ do
 		printf -v ddGs_str '>%s' "${ddGs[@]}"
 		ddGs_str=${ddGs_str:1} 
 		echo "$name1, $name2, $ddGs_str, $uncertanity, $start_frame_index, $end_frame" >> ../../ddG_convergence.dat
-		echo "$name1, $name2, $ddG, $uncertanity, $start_frame_index, $end_frame $maxdgint, $penaltyoverlap, $penaltyintermediate" >> ../../atm_results.dat
+		echo "$name1, $name2, $ddG, $uncertanity, $start_frame_index, $end_frame, $maxdgint, $penaltyoverlap, $penaltyintermediate" >> ../../atm_results.dat
 		cd ..
 	fi
 done
