@@ -12,7 +12,6 @@ from time import gmtime, strftime
 
 import numpy as np
 
-from Bio.PDB import PDBParser
 from rdkit import Chem
 from scipy.spatial import distance_matrix
 from scipy.spatial.distance import cdist
