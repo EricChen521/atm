@@ -54,7 +54,8 @@ platforms = [
 
 # Runtime dependencies that are only conda installable
 [tool.conda-lock.dependencies]
-ambertools = ">=22.0"
+# 24.8 has some issue in parameterzing ligand
+ambertools = ">=22.0, <=23.6"
 
 
 # Runtime dependencies that are both pip and conda installable

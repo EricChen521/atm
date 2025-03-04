@@ -37,4 +37,4 @@ else
    done
 fi
 
-${atm_pythonpath} $atom_build_path/${fep_type}_explicit.py atom_${fep_type}.cntl || exit
+${atm_pythonpath} $atom_build_path/${fep_type}_production.py atom_${fep_type}.cntl || exit
