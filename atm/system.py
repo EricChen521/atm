@@ -377,8 +377,7 @@ def parse_protein(complex_pdb_fpath: Path= None,
             "ligoffset": The vector from ligand 1 center to vsite center
     
     """
-    # get the first ligand coordinate
-
+    
     pdb = PDBFile(str(complex_pdb_fpath))
     positions = pdb.positions
     ommtopology = pdb.topology
@@ -557,110 +556,151 @@ def update_scripts(
             )
             fh.write(str(run_atm_template))
         
-        # write pml for trajectory visulization
-        
-        with open(free_energy_dpath/perturbation_dirname/"vis_mdlambda.pml","w") as fh:
-            vis_template = Template(
-                open(template_dir()/"vis_template.pml","r").read()
-            ).substitute(
-                traj="complex_mdlambda.xtc",
-                reversed_displ=f"[{-config.displ_vec[0]},{-config.displ_vec[1]},{-config.displ_vec[2]}]"
+        if config.atm_type == "abfe":
+            lig_atom_ids = list(
+                range(
+                    N_protein,
+                    N_protein + alignment_result[perturbation_dirname]["N_atoms"],
+                )
             )
-            fh.write(vis_template)
-        with open(free_energy_dpath/perturbation_dirname/"vis_r0.pml","w") as fh:
-            vis_template = Template(
-                open(template_dir()/"vis_template.pml","r").read()
-            ).substitute(
-                traj="r0/complex.xtc",
-                reversed_displ=f"[{-config.displ_vec[0]},{-config.displ_vec[1]},{-config.displ_vec[2]}]"
+            with open(
+                free_energy_dpath / perturbation_dirname / "atom_abfe.cntl", "w"
+            ) as fh:
+                atom_template = Template(
+                    open(template_dir() / "atom_abfe_template.cntl", "r").read()
+                ).substitute(
+                    work_dir=str(free_energy_dpath / perturbation_dirname),
+                    ligoffset=",".join(map(str,protein_info["ligoffset"])),
+                    # abfe with gaff2, ligand already in the solvent, use the oppsite displacemnet to go back to binding site
+                    # abfe with openff, ligand is in the binding site, use the normal displacement to go to solvent
+                    displ=",".join(map(str, [-i for i in config.displ_vec] if config.forcefield_option =="gaff2" else config.displ_vec)),
+                    lig_atoms=",".join(map(str, lig_atom_ids)),
+                    lig_cm_atoms=str(N_protein + alignment_result[perturbation_dirname]['align_atom_ids'][0]-1),
+                    rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
+                    restrained_atoms=",".join(map(str, restrained_CA_ids)),
+                    max_sample_num=max_sample_num,
+                    exchange_interval=config.exchange_interval,
+                    print_energy_interval=config.print_energy_interval,
+                    print_traj_interval=config.print_traj_interval,
+                    kforce_vsite=config.kforce_vsite,
+                    vsite_radius=config.vsite_radius,
+                    kforce_displ=config.kforce_displ,
+                    kforce_theta=config.kforce_theta,
+                    kforce_psi=config.kforce_psi,
+                    hmass=1.5 if config.dt == 0.004 else 1.0,
+                    dt=config.dt,
+                )
+                fh.write(atom_template)
+
+        if config.atm_type == "rbfe":
+            lig1_name, lig2_name = perturbation_dirname.split("~")
+            lig1_ids = list(
+                range(N_protein, N_protein + alignment_result[lig1_name]["N_atoms"])
             )
-            fh.write(vis_template)
-
-            if config.atm_type == "abfe":
-                lig_atom_ids = list(
-                    range(
-                        N_protein,
-                        N_protein + alignment_result[perturbation_dirname]["N_atoms"],
-                    )
+            lig1_alignment_ids = [
+                int(e) - 1 for e in alignment_result[lig1_name]["align_atom_ids"]
+            ]
+            lig2_ids = list(
+                range(
+                    lig1_ids[-1] + 1,
+                    lig1_ids[-1] + 1 + alignment_result[lig2_name]["N_atoms"],
                 )
-                with open(
-                    free_energy_dpath / perturbation_dirname / "atom_abfe.cntl", "w"
-                ) as fh:
-                    atom_template = Template(
-                        open(template_dir() / "atom_abfe_template.cntl", "r").read()
-                    ).substitute(
-                        work_dir=str(free_energy_dpath / perturbation_dirname),
-                        ligoffset=",".join(map(str,protein_info["ligoffset"])),
-                        # abfe with gaff2, ligand already in the solvent, use the oppsite displacemnet to go back to binding site
-                        # abfe with openff, ligand is in the binding site, use the normal displacement to go to solvent
-                        displ=",".join(map(str, [-i for i in config.displ_vec] if config.forcefield_option =="gaff2" else config.displ_vec)),
-                        lig_atoms=",".join(map(str, lig_atom_ids)),
-                        lig_cm_atoms=str(N_protein + alignment_result[perturbation_dirname]['align_atom_ids'][0]-1),
-                        rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
-                        restrained_atoms=",".join(map(str, restrained_CA_ids)),
-                        max_sample_num=max_sample_num,
-                        exchange_interval=config.exchange_interval,
-                        print_energy_interval=config.print_energy_interval,
-                        print_traj_interval=config.print_traj_interval,
-                        kforce_vsite=config.kforce_vsite,
-                        vsite_radius=config.vsite_radius,
-                        kforce_displ=config.kforce_displ,
-                        kforce_theta=config.kforce_theta,
-                        kforce_psi=config.kforce_psi,
-                        hmass=1.5 if config.dt == 0.004 else 1.0,
-                        dt=config.dt,
-                    )
-                    fh.write(atom_template)
+            )
+            lig2_alignment_ids = [
+                int(e) - 1 for e in alignment_result[lig2_name]["align_atom_ids"]
+            ]
+            
+            # write the wrap.in file for cpptraj to put L1 back to binding site
+            
+            # get the first ligand coordinate
+            L1_pdb_ids =[]
+            L2_pdb_ids =[]
+            complex_fpath = free_energy_dpath / perturbation_dirname / "complex.pdb"
+            for line in open(str(complex_fpath),"r").readlines():
+                if "HETATM" in line and "L1" in line:
+                    L1_pdb_ids.append(int(line.split()[1]))
+                if "HETATM" in line and "L2" in line:
+                    L2_pdb_ids.append(int(line.split()[1]))
+                    
+            #print(f"L2_pdb_ids: {L2_pdb_ids}, pdb file: {complex_fpath}")   
 
-            if config.atm_type == "rbfe":
-                lig1_name, lig2_name = perturbation_dirname.split("~")
-                lig1_ids = list(
-                    range(N_protein, N_protein + alignment_result[lig1_name]["N_atoms"])
+            with open(
+                free_energy_dpath/perturbation_dirname/"wrap.in","w"
+            ) as fh:
+                wrap_template = Template(
+                    open(template_dir()/"wrap_template.in","r").read()
+                ).substitute(
+                    d1=-config.displ_vec[0],
+                    d2=-config.displ_vec[1],
+                    d3=-config.displ_vec[2],
                 )
-                lig1_alignment_ids = [
-                    int(e) - 1 for e in alignment_result[lig1_name]["align_atom_ids"]
-                ]
-                lig2_ids = list(
-                    range(
-                        lig1_ids[-1] + 1,
-                        lig1_ids[-1] + 1 + alignment_result[lig2_name]["N_atoms"],
-                    )
+                fh.write(wrap_template)
+            
+            print(f"L2_pdb_ids: {L2_pdb_ids}, lig2_alignment_ids: {lig2_alignment_ids}")
+            # write the vis.pml for pymol visualization
+            with open(free_energy_dpath/perturbation_dirname/"vis.pml","w") as fh:
+                vis_template = Template(
+                    open(template_dir()/"vis_template.pml","r").read()
+                            ).substitute(
+                                p1_id = L1_pdb_ids[lig1_alignment_ids[0]],
+                                p2_id = L1_pdb_ids[lig1_alignment_ids[1]],
+                                p3_id = L1_pdb_ids[lig1_alignment_ids[2]],
+                                P1_id = L2_pdb_ids[lig2_alignment_ids[0]],
+                                P2_id = L2_pdb_ids[lig2_alignment_ids[1]],
+                                P3_id = L2_pdb_ids[lig2_alignment_ids[2]],
+                                
+                            )
+                fh.write(vis_template)
+            
+            with open(free_energy_dpath/perturbation_dirname/"cpptraj.sh","w") as fh:
+                fh.write("""
+cpptraj -i wrap.in               
+                            """)
+            
+            # vmd visualization template
+            with open(free_energy_dpath/perturbation_dirname/"vmd.in","w") as fh:
+                vis_template = Template(
+                    open(template_dir()/"vmd_template.in","r").read()
+                ).substitute(
+                    d1=-config.displ_vec[0],
+                    d2=-config.displ_vec[1],
+                    d3=-config.displ_vec[2],
+                    i = "$i",
+                    sel="$sel",
                 )
-                lig2_alignment_ids = [
-                    int(e) - 1 for e in alignment_result[lig2_name]["align_atom_ids"]
-                ]
-
-                with open(
-                    free_energy_dpath / perturbation_dirname / "atom_rbfe.cntl", "w"
-                ) as fh:
-                    atom_template = Template(
-                        open(template_dir() / "atom_rbfe_template.cntl", "r").read()
-                    ).substitute(
-                        work_dir=str(free_energy_dpath / perturbation_dirname),
-                        displ=",".join(map(str, config.displ_vec)),
-                        ligoffset=",".join(map(str,protein_info["ligoffset"])),
-                        lig1_atoms=",".join(map(str, lig1_ids)),
-                        lig2_atoms=",".join(map(str, lig2_ids)),
-                        # local ligand index for alignment
-                        refatoms_lig1=",".join(map(str, lig1_alignment_ids)),
-                        refatoms_lig2=",".join(map(str, lig2_alignment_ids)),
-                        lig1_cm_atoms=str(lig1_ids[0] + lig1_alignment_ids[0]),
-                        lig2_cm_atoms=str(lig2_ids[0] +lig2_alignment_ids[0]),
-                        rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
-                        restrained_atoms=",".join(map(str, restrained_CA_ids)),
-                        max_sample_num=max_sample_num,
-                        exchange_interval=config.exchange_interval,
-                        print_energy_interval=config.print_energy_interval,
-                        print_traj_interval=config.print_traj_interval,
-                        kforce_vsite=config.kforce_vsite,
-                        vsite_radius=config.vsite_radius,
-                        kforce_displ=config.kforce_displ,
-                        kforce_theta=config.kforce_theta,
-                        kforce_psi=config.kforce_psi,
-                        hmass=1.5 if config.dt == 0.004 else 1.0,
-                        dt=config.dt,
-                    )
-                    fh.write(atom_template)
+                fh.write(vis_template)
+            
+            with open(
+                free_energy_dpath / perturbation_dirname / "atom_rbfe.cntl", "w"
+            ) as fh:
+                atom_template = Template(
+                    open(template_dir() / "atom_rbfe_template.cntl", "r").read()
+                ).substitute(
+                    work_dir=str(free_energy_dpath / perturbation_dirname),
+                    displ=",".join(map(str, config.displ_vec)),
+                    ligoffset=",".join(map(str,protein_info["ligoffset"])),
+                    lig1_atoms=",".join(map(str, lig1_ids)),
+                    lig2_atoms=",".join(map(str, lig2_ids)),
+                    # local ligand index for alignment
+                    refatoms_lig1=",".join(map(str, lig1_alignment_ids)),
+                    refatoms_lig2=",".join(map(str, lig2_alignment_ids)),
+                    lig1_cm_atoms=str(lig1_ids[0] + lig1_alignment_ids[0]),
+                    lig2_cm_atoms=str(lig2_ids[0] +lig2_alignment_ids[0]),
+                    rcpt_cm_atoms=",".join(map(str, vsite_CA_ids)),
+                    restrained_atoms=",".join(map(str, restrained_CA_ids)),
+                    max_sample_num=max_sample_num,
+                    exchange_interval=config.exchange_interval,
+                    print_energy_interval=config.print_energy_interval,
+                    print_traj_interval=config.print_traj_interval,
+                    kforce_vsite=config.kforce_vsite,
+                    vsite_radius=config.vsite_radius,
+                    kforce_displ=config.kforce_displ,
+                    kforce_theta=config.kforce_theta,
+                    kforce_psi=config.kforce_psi,
+                    hmass=1.5 if config.dt == 0.004 else 1.0,
+                    dt=config.dt,
+                )
+                fh.write(atom_template)
         job_id += 1
 
 

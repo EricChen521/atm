@@ -1,0 +1,14 @@
+parm complex.pdb
+trajin complex_mdlambda.xtc
+translate :L2 x $d1 y $d2 z $d3
+autoimage
+trajout complex_mdlambda_wrap.xtc
+go
+clear all
+parm complex.pdb
+trajin r0/complex.xtc
+translate :L2 x $d1 y $d2 z $d3
+autoimage
+trajout complex_r0_wrap.xtc
+go
+quit
