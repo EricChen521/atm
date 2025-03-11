@@ -384,7 +384,12 @@ def parse_protein(complex_pdb_fpath: Path= None,
     if config.relaxed_res_ids:
         print(f"relaxed_res_ids: {config.relaxed_res_ids}")
     
-
+    # calculate the resid shift from input protein to the openmm complex.pdb
+    protein_input_topo=PDBFile(config.protein_fpathname).topology
+    first_resid = int(next(protein_input_topo.atoms()).residue.id)
+    resid_shift = first_resid - 1
+    #print(f"protein id shift: {resid_shift}")
+   
     CA_ids = []
     CA_positions = []
     vsite_positions =[]
@@ -404,21 +409,25 @@ def parse_protein(complex_pdb_fpath: Path= None,
             
             L1_positions.append(atom_position)
         
+        #FIXME Maybe it is better to use L1 to select the vsite residue?
         elif atom.name == "CA":
             CA_ids.append(atom.index)
             CA_positions.append([atom_position])
             
             if config.relaxed_res_ids:
-                if int(atom.residue.id) in config.relaxed_res_ids:
+                if int(atom.residue.id)+ resid_shift in config.relaxed_res_ids:
                     relax_CA_ids.append(atom.index)
             
-            if int(atom.residue.id) in config.vsite_res_ids:
+            if int(atom.residue.id) + resid_shift in config.vsite_res_ids:
                 vsite_CA_ids.append(atom.index) 
                 vsite_positions.append(atom_position)
-                 
+    
+    assert len(vsite_positions) !=0, "vsite is not defined"            
     #L1_coords = np.array(L1_positions)  
     L1_CM_coords = L1_positions[config.ref_alignidx[0]-1]
     vsite_coords = np.array(vsite_positions)
+    #print(f"L1_CM_coords:{L1_CM_coords}")
+    #print(f"vsite_coords: {vsite_coords}")
     dx = round(L1_CM_coords[0] - np.mean(vsite_coords[:,0]),2)
     dy = round(L1_CM_coords[1] - np.mean(vsite_coords[:,1]),2)
     dz = round(L1_CM_coords[2] - np.mean(vsite_coords[:,2]),2)
