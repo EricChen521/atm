@@ -40,4 +40,4 @@ Step 7 Activate the env and run the ATM calculation
 conda activate atm-dev
 atm -c atm_config.yaml
 ```
-  
+Good luck!  
