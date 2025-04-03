@@ -199,7 +199,7 @@ def setup_atm_dir(  # noqa: C901
                                 amber_crd_fapth=Path("complex.inpcrd"),
                                 xml_out_fpath=Path("complex_sys.xml"),
                                 pdb_out_fpath=Path("complex.pdb"),
-                                is_hmr=True if config.dt == 0.04 else False,
+                                is_hmr=True if config.dt == 0.004 else False,
                             )
 
                         elif config.forcefield_option == "openff":
@@ -213,7 +213,7 @@ def setup_atm_dir(  # noqa: C901
                                             Path("./complex.pdb").resolve(),
                                             ligand_dpath / right_ligand_name / "ligand.sdf",
                                             cofactor_fpath if cofactor_fpath else None,
-                                            True if config.dt == 0.04 else False,
+                                            config.dt == 0.004,
                                         ]
                                     )
 
@@ -262,7 +262,7 @@ def setup_atm_dir(  # noqa: C901
                                 amber_crd_fapth=Path("complex.inpcrd"),
                                 xml_out_fpath=Path("complex_sys.xml"),
                                 pdb_out_fpath=Path("complex.pdb"),
-                                is_hmr = True if config.dt == 0.04 else False,
+                                is_hmr = True if config.dt == 0.004 else False,
                             )
                         elif config.forcefield_option in ["openff"]:
                             if not Path("complex_sys.xml").is_file():
@@ -278,7 +278,7 @@ def setup_atm_dir(  # noqa: C901
                                     cofactor_fpath=cofactor_fpath
                                     if cofactor_fpath
                                     else None,
-                                    is_hmass=True if config.dt == 0.004 else False,
+                                    is_hmass=True if (config.dt == 0.004) else False,
                                 )
             if parameters:
 
@@ -287,7 +287,7 @@ def setup_atm_dir(  # noqa: C901
                 print(f"cpu number: {cpu_number}, pair number: {proc_num}")
                 print(f"start openff calculation at: {strftime('%Y-%m-%d %H:%M:%S', gmtime())}")
                 with Pool(min(cpu_number,proc_num)) as pool:
-                    result=pool.map(multi_run_wrapper,[(p[0],p[1],p[2],p[3],p[4],p[5],p[6]) for p in parameters])
+                    result=pool.map(multi_run_wrapper,[(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7]) for p in parameters])
                 print(f"complete openff calculation at: {strftime('%Y-%m-%d %H:%M:%S', gmtime())}")
                 #pool = multiprocessing.Pool(cpu_number)
                 #pool.map(func=create_xml_from_openff,interable=parameters)

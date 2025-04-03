@@ -365,10 +365,10 @@ def create_xml_from_openff(
     pdb_out_fpath: Path,
     lig2_fpath: Optional[Path]=None,  # sdf format
     cofactor_fpath: Optional[Path] = None,
+    is_hmass: bool = False,
     protein_ff: str = "amber14-all.xml",
     solvent_ff: str = "amber14/tip3p.xml",
     ligand_ff: str = "openff-2.2.1.offxml",
-    is_hmass: bool = False,
 ) -> Tuple[Path]:
     """
     Create xml file using amber14(protein)/openff(small molecules) forcefield.
@@ -535,8 +535,8 @@ def check_atm_input(config):
     Check the input files for ATM
     """
 
-    assert Path(config.ligand_dpathname).is_dir(), "not ligand dir found"
-    assert Path(config.protein_fpathname).is_file(),"no protein file found"
+    assert Path(config.ligand_dpathname).resolve().is_dir(), f"ligand dir: {Path(config.ligand_dpathname).resolve()} not found!"
+    assert Path(config.protein_fpathname).resolve().is_file(),f"protein file: {Path(config.protein_fpathname).resolve()} not found!"
     
     if config.cofactor_fpathname and Path(config.cofactor_fpathname).is_file():
         assert Path(config.cofactor_fpathname).name == "cofactor.sdf", "you have to put cofactor as '[name]/cofactor.sdf'"
