@@ -8,7 +8,6 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:${gres}
 #SBATCH --cpus-per-task=2
-#SBATCH --no-requeue
 #SBATCH -t 72:00:00
 
 
